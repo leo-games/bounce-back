@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground Bounce - Data-Driven Levels</title> <script src="https://cdn.tailwindcss.com"></script>
+    <title>Bounce Back - Level Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -39,6 +40,9 @@
         #menu.hidden { transform: translateX(-110%); }
         #showMenuButton { transition: opacity 0.3s ease-in-out; }
         #showMenuButton.hidden { opacity: 0; pointer-events: none; }
+        /* Logo Placeholder Style */
+        #logoPlaceholder { display: inline-block; background-color: #e0e0e0; color: #757575; text-align: center; line-height: 4rem; /* Adjust based on height */ font-size: 0.8rem; }
+
     </style>
 </head>
 <body class="bg-gray-100">
@@ -48,7 +52,10 @@
 </button>
 
 <div id="menu" class="absolute top-4 left-4 bg-white p-4 rounded-lg shadow-xl z-10 space-y-3 w-64 max-h-[calc(100vh-2rem)] overflow-y-auto">
-    <h2 class="text-lg font-semibold text-center text-gray-800">Menu</h2>
+    <div class="flex justify-center mb-2">
+        <img id="gameLogo" src="logo.png" alt="Bounce Back Logo" class="w-20 h-auto rounded" onerror="this.style.display='none'; document.getElementById('logoPlaceholder').style.display='inline-block';">
+    </div>
+    <h2 class="text-xl font-semibold text-center text-gray-800">Bounce Back</h2>
 
     <div class="grid grid-cols-2 gap-2">
         <button id="playButton" class="w-full px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition duration-150 ease-in-out text-sm font-medium">Play Mode</button>
@@ -134,38 +141,37 @@
     const PLAYER_HEAD_RADIUS = 10;
     const BALL_RADIUS = 10;
     const HOLE_RADIUS = 15;
-    const AIM_LINE_LENGTH = 100; // Max visual length of aim line
-    const AIM_POWER_FACTOR = 10.0; // Divisor for aim power calculation
-    const AIM_VISUAL_SCALE = 5; // Multiplier for drawing aim line length
-    const MIN_AIM_VY = -0.1; // Minimum upward velocity when aiming
-    const BRICK_COLOR = "#6B7280"; // Gray-500
-    const BRICK_STROKE_COLOR = "#1F2937"; // Gray-800
-    const KILL_BRICK_COLOR = "#EF4444"; // Red-500
-    const VERTICAL_MOVER_COLOR = "#FACC15"; // Yellow-400
-    const HORIZONTAL_MOVER_COLOR = "#4ADE80"; // Green-400
-    const SELECTED_BRICK_COLOR = "#3B82F6"; // Blue-500
-    const SELECTED_ITEM_OUTLINE_COLOR = "#F59E0B"; // Amber-500
-    const HANDLE_COLOR = "#F59E0B"; // Amber-500
-    const HANDLE_SIZE = 5; // Radius of resize handles
-    const ROTATE_HANDLE_OFFSET = 20; // Distance of rotate handle from top edge
-    const ROTATE_HANDLE_SIZE_FACTOR = 1.2; // Multiplier for rotate handle size
-    const MIN_BRICK_DIMENSION = 10; // Minimum width/height for bricks
-    const COLLISION_PUSH_FACTOR = 1.01; // Slight over-correction for collision resolution
-    const PLAYER_BOTTOM_OFFSET = 60; // Default distance from bottom for player
-    const HOLE_DEFAULT_Y = 100; // Default Y position for hole
+    const AIM_LINE_LENGTH = 100;
+    const AIM_POWER_FACTOR = 10.0;
+    const AIM_VISUAL_SCALE = 5;
+    const MIN_AIM_VY = -0.1;
+    const BRICK_COLOR = "#6B7280";
+    const BRICK_STROKE_COLOR = "#1F2937";
+    const KILL_BRICK_COLOR = "#EF4444";
+    const VERTICAL_MOVER_COLOR = "#FACC15";
+    const HORIZONTAL_MOVER_COLOR = "#4ADE80";
+    const SELECTED_BRICK_COLOR = "#3B82F6";
+    const SELECTED_ITEM_OUTLINE_COLOR = "#F59E0B";
+    const HANDLE_COLOR = "#F59E0B";
+    const HANDLE_SIZE = 5;
+    const ROTATE_HANDLE_OFFSET = 20;
+    const ROTATE_HANDLE_SIZE_FACTOR = 1.2;
+    const MIN_BRICK_DIMENSION = 10;
+    const COLLISION_PUSH_FACTOR = 1.01;
+    const PLAYER_BOTTOM_OFFSET = 60;
+    const HOLE_DEFAULT_Y = 100;
     const BALL_OUTLINE_WIDTH = 2;
-    const NUDGE_AMOUNT = 1; // Pixels to move per arrow key press
-    const PASTE_OFFSET = 15; // Offset for pasted items
-    const MAX_HISTORY = 50; // Max undo steps
-    const MESSAGE_DISPLAY_TIME = 1500; // ms
-    const DEFAULT_MOVE_RANGE = 50; // Pixels from center for moving bricks
-    const DEFAULT_MOVE_SPEED = 1.0; // Arbitrary speed unit for moving bricks
-    const CLICK_THRESHOLD_SQ = 9; // Squared pixel distance to differentiate click vs drag
-    const MOVER_RANGE_INDICATOR_COLOR = "rgba(100, 100, 255, 0.5)"; // Color for visual range line
+    const NUDGE_AMOUNT = 1;
+    const PASTE_OFFSET = 15;
+    const MAX_HISTORY = 50;
+    const MESSAGE_DISPLAY_TIME = 1500;
+    const DEFAULT_MOVE_RANGE = 50;
+    const DEFAULT_MOVE_SPEED = 1.0;
+    const CLICK_THRESHOLD_SQ = 9;
+    const MOVER_RANGE_INDICATOR_COLOR = "rgba(100, 100, 255, 0.5)";
     const MOVER_RANGE_INDICATOR_WIDTH = 2;
-    // *** NEW: Default level file paths ***
     const DEFAULT_LEVEL_FILES = [
-        './data/levels/Level_1.json' // Add more default level file paths here
+        './data/levels/Level_1.json' // Assuming you have this file
     ];
 
 
@@ -174,19 +180,19 @@
         player: { x: 0, y: 0, width: PLAYER_WIDTH, height: PLAYER_HEIGHT },
         ball: { x: 0, y: 0, radius: BALL_RADIUS, vx: 0, vy: 0, fired: false, onPlayer: true },
         hole: { x: 0, y: 0, radius: HOLE_RADIUS },
-        bricks: [], // { x, y, width, height, angle, isKillBrick?, movementType?, moveRange?, moveSpeed?, initialX?, initialY? }
+        bricks: [],
         currentLevelIndex: 0,
-        mode: 'editor', // 'editor' or 'play'
+        mode: 'editor',
     };
 
     // --- Editor State Variables ---
     let editorState = {
-        selectedItems: [], // {type: 'brick'/'player'/'hole', index: number/null}
-        draggingHandle: null, // { type: 'tl'|'tr'|'bl'|'br'|'rotate', itemRef: {type, index}, startBrickState }
-        dragStart: { x: 0, y: 0 }, // For dragging items/handles
-        originalItemStates: [], // Stores state of items at drag start
+        selectedItems: [],
+        draggingHandle: null,
+        dragStart: { x: 0, y: 0 },
+        originalItemStates: [],
         mouse: { x: 0, y: 0, down: false, dragStartX: 0, dragStartY: 0 },
-        aim: { dx: 0, dy: 0, active: false }, // For play mode aiming
+        aim: { dx: 0, dy: 0, active: false },
         isMarqueeSelecting: false,
         marqueeStart: { x: 0, y: 0 },
         marqueeEnd: { x: 0, y: 0 },
@@ -195,477 +201,67 @@
         history: [],
         historyIndex: -1,
         isNudging: false,
-        contextMenuTarget: null, // { type: 'empty'/'brick', x?, y?, index? }
+        contextMenuTarget: null,
         isUpdatingPropertiesFromInput: false,
     };
 
     // --- Level Data ---
     let levelManager = {
-        levels: [], // Array of level data objects
-        storageKey: 'customLevels_v2',
+        levels: [],
+        storageKey: 'bounceBackLevels_v1', // *** MODIFIED: Storage key for new name ***
 
-        // --- Level Loading/Saving ---
-        // *** MODIFIED: Now asynchronous to handle fetching default levels ***
         loadLevelsFromStorage: async function() {
             const storedLevels = localStorage.getItem(this.storageKey);
             let loadedFromStorage = false;
-
-            // 1. Try loading from localStorage first
             if (storedLevels) {
                 try {
                     const parsedLevels = JSON.parse(storedLevels);
-                    // Basic validation
                     if (Array.isArray(parsedLevels) && parsedLevels.length > 0 && typeof parsedLevels[0] === 'object' && parsedLevels[0].bricks) {
                         this.levels = parsedLevels;
-                        // Ensure defaults and structure for each level from storage
                         this.levels.forEach((lvl, index) => this._validateAndDefaultLevel(lvl, index));
                         loadedFromStorage = true;
                         console.log("Loaded levels from localStorage.");
-                    } else {
-                        console.warn("Invalid level structure in localStorage.");
-                    }
-                } catch (e) {
-                    console.error("Failed to parse levels from localStorage:", e);
-                    uiManager.showMessage("Error loading saved levels. Loading defaults.", 3000);
-                    this.levels = []; // Reset if parsing failed
-                }
+                    } else { console.warn("Invalid level structure in localStorage."); }
+                } catch (e) { console.error("Failed to parse levels from localStorage:", e); uiManager.showMessage("Error loading saved levels. Loading defaults.", 3000); this.levels = []; }
             }
-
-            // 2. If localStorage loading failed or was empty, fetch defaults
             if (!loadedFromStorage) {
                 console.log("No valid levels in localStorage, attempting to fetch defaults...");
                 try {
-                    // Fetch all default level files concurrently
-                    const responses = await Promise.all(
-                        DEFAULT_LEVEL_FILES.map(url => fetch(url))
-                    );
-
-                    // Check if all fetches were successful
+                    const responses = await Promise.all( DEFAULT_LEVEL_FILES.map(url => fetch(url)) );
                     const allOk = responses.every(res => res.ok);
-                    if (!allOk) {
-                         const failed = responses.filter(res => !res.ok);
-                         throw new Error(`Failed to fetch default levels: ${failed.map(f => f.url + ' ('+f.statusText+')').join(', ')}`);
-                    }
-
-                    // Parse JSON from all responses
-                    const fetchedLevelData = await Promise.all(
-                        responses.map(res => res.json())
-                    );
-
-                    // Validate and assign fetched levels
+                    if (!allOk) { const failed = responses.filter(res => !res.ok); throw new Error(`Failed to fetch default levels: ${failed.map(f => f.url + ' ('+f.statusText+')').join(', ')}`); }
+                    const fetchedLevelData = await Promise.all( responses.map(res => res.json()) );
                     if (fetchedLevelData.length > 0) {
                         this.levels = fetchedLevelData;
                         this.levels.forEach((lvl, index) => this._validateAndDefaultLevel(lvl, index));
                         console.log(`Successfully fetched and validated ${this.levels.length} default levels.`);
-                        this.saveLevelsToStorage(); // Save the fetched defaults to localStorage
-                    } else {
-                         throw new Error("Fetched default level data was empty.");
-                    }
-
+                        this.saveLevelsToStorage();
+                    } else { throw new Error("Fetched default level data was empty."); }
                 } catch (fetchError) {
                     console.error("Failed to fetch or process default levels:", fetchError);
                     uiManager.showMessage("Could not load default levels. Using fallback.", 3000);
-                    // Fallback to hardcoded default if fetching fails
                     this.levels = [this._createDefaultLevelData(0)];
-                    // Don't save the fallback to storage immediately, let user save manually
                 }
             }
-
-            // Ensure there's at least one level, even after potential errors
-            if (this.levels.length === 0) {
-                 console.warn("Level loading resulted in empty array, creating fallback.");
-                 this.levels = [this._createDefaultLevelData(0)];
-            }
-
-            // Set initial level index and update UI
+            if (this.levels.length === 0) { console.warn("Level loading resulted in empty array, creating fallback."); this.levels = [this._createDefaultLevelData(0)]; }
             gameState.currentLevelIndex = 0;
             this.populateLevelList();
         },
-
-        saveLevelsToStorage: function() {
-            try {
-                localStorage.setItem(this.storageKey, JSON.stringify(this.levels));
-                 console.log("Saved levels to localStorage.");
-            } catch (e) {
-                console.error("Failed to save levels to localStorage:", e);
-                uiManager.showMessage("Error saving levels. Storage might be full.", 3000);
-            }
-        },
-
-        // Validates a single level object and applies defaults
-        _validateAndDefaultLevel: function(lvl, index) {
-            const defaultLvl = this._createDefaultLevelData(index); // Use fallback for defaults
-            // Basic structure checks
-            if (typeof lvl !== 'object' || lvl === null) return; // Skip invalid level object
-
-            lvl.name = lvl.name || `Level ${index + 1}`;
-            lvl.player = lvl.player || defaultLvl.player;
-            if (lvl.player && !lvl.player.yOffset) lvl.player.yOffset = PLAYER_BOTTOM_OFFSET;
-            lvl.hole = lvl.hole || defaultLvl.hole;
-            lvl.bricks = Array.isArray(lvl.bricks) ? lvl.bricks : defaultLvl.bricks;
-
-            // Ensure defaults for brick properties
-            lvl.bricks.forEach(brick => {
-                if (typeof brick !== 'object' || brick === null) return; // Skip invalid brick object
-                brick.isKillBrick = brick.isKillBrick || false;
-                brick.movementType = brick.movementType || null;
-                brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE;
-                brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED;
-                brick.angle = brick.angle || 0;
-                // Ensure essential properties exist, even if default is 0/null
-                brick.x = brick.x ?? 0;
-                brick.y = brick.y ?? 0;
-                brick.width = brick.width ?? 100;
-                brick.height = brick.height ?? 20;
-            });
-        },
-
-        // Creates a default level structure (NOW USED AS FALLBACK)
-        _createDefaultLevelData: function(levelIndex = 0) {
-             console.log("Creating fallback default level data.");
-            // Example bricks for the first level (fallback)
-            const fallbackBricks = [
-                    { x: -150, y: 300, width: 200, height: 15, angle: -Math.PI / 16, isKillBrick: false, movementType: null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED },
-                    { x: 0, y: 180, width: 100, height: 15, angle: 0, isKillBrick: false, movementType: 'horizontal', moveRange: 80, moveSpeed: 1.5 },
-                    { x: 150, y: 250, width: 15, height: 80, angle: 0, isKillBrick: true, movementType: 'vertical', moveRange: 40, moveSpeed: 0.8 }
-                ];
-            return {
-                name: `Fallback Level ${levelIndex + 1}`,
-                bricks: fallbackBricks,
-                player: { relX: 0, yOffset: PLAYER_BOTTOM_OFFSET },
-                hole: { relX: 0, y: HOLE_DEFAULT_Y }
-            };
-        },
-
-        // Loads the specified level index into the main game state
-        loadLevelData: function(index) {
-            if (index < 0 || index >= this.levels.length) {
-                console.error("Attempted to load invalid level index:", index);
-                index = 0; // Fallback to first level
-                if (this.levels.length === 0) { // Should not happen if loadLevelsFromStorage worked
-                    this.levels.push(this._createDefaultLevelData(0)); // Create fallback if truly empty
-                }
-            }
-            const levelData = this.levels[index];
-            // Ensure levelData itself is valid before proceeding
-            if (typeof levelData !== 'object' || levelData === null || !Array.isArray(levelData.bricks)) {
-                 console.error("Invalid level data structure at index:", index, levelData);
-                 uiManager.showMessage(`Error: Corrupted level data for Level ${index + 1}.`, 3000);
-                 // Optionally, replace the corrupted level with a default?
-                 // this.levels[index] = this._createDefaultLevelData(index);
-                 // levelData = this.levels[index];
-                 return; // Or simply stop loading this level
-            }
-
-            const centerX = canvas.width / 2;
-
-            // --- Brick Loading ---
-            gameState.bricks = levelData.bricks.map(brickData => {
-                // Basic check for valid brick data object
-                if (typeof brickData !== 'object' || brickData === null) {
-                    console.warn("Skipping invalid brick data during load:", brickData);
-                    return null; // Skip this invalid brick
-                }
-                const initialAbsX = centerX + (brickData.x || 0);
-                const initialAbsY = brickData.y || 0;
-
-                return {
-                    ...brickData,
-                    x: initialAbsX,
-                    y: initialAbsY,
-                    initialX: initialAbsX,
-                    initialY: initialAbsY,
-                    isKillBrick: brickData.isKillBrick || false,
-                    movementType: brickData.movementType || null,
-                    moveRange: brickData.moveRange ?? DEFAULT_MOVE_RANGE,
-                    moveSpeed: brickData.moveSpeed ?? DEFAULT_MOVE_SPEED,
-                    angle: brickData.angle || 0,
-                    width: brickData.width ?? 100, // Ensure width/height have defaults
-                    height: brickData.height ?? 20,
-                };
-            }).filter(brick => brick !== null); // Filter out any null bricks from invalid data
-
-            // --- Player Loading ---
-            const playerDefaults = this._createDefaultLevelData(0).player;
-            const currentPlayerData = levelData.player || playerDefaults;
-            gameState.player.x = centerX + (currentPlayerData.relX || 0);
-            gameState.player.y = canvas.height - (currentPlayerData.yOffset || PLAYER_BOTTOM_OFFSET);
-
-            // --- Hole Loading ---
-             const holeDefaults = this._createDefaultLevelData(0).hole;
-             const currentHoleData = levelData.hole || holeDefaults;
-            gameState.hole.x = centerX + (currentHoleData.relX || 0);
-            gameState.hole.y = currentHoleData.y || HOLE_DEFAULT_Y;
-
-            // --- Update State ---
-            gameState.currentLevelIndex = index;
-            uiManager.updateLevelDisplays();
-            gameLogic.resetBall();
-            editor.resetSelectionAndHistory(); // Reset editor state when loading
-            historyManager.saveState(true); // Save the *initialized* state as the first history entry
-            uiManager.updateBrickPropertiesUI();
-        },
-
-        // Saves the current game state back into the levels array and storage
-        saveCurrentLevel: function() {
-            if (gameState.mode !== 'editor') return;
-            const index = gameState.currentLevelIndex;
-            if (index < 0 || index >= this.levels.length) {
-                console.error("Cannot save, invalid level index selected:", index);
-                uiManager.showMessage("Error: Invalid level selected for saving.", 2000);
-                return;
-            }
-            const centerX = canvas.width / 2;
-            const levelData = this.levels[index];
-
-            // --- Brick Saving ---
-            levelData.bricks = gameState.bricks.map(brick => {
-                const savedRelX = (brick.initialX !== undefined ? brick.initialX : brick.x) - centerX;
-                const savedAbsY = brick.initialY !== undefined ? brick.initialY : brick.y;
-                return {
-                    x: savedRelX,
-                    y: savedAbsY,
-                    width: brick.width,
-                    height: brick.height,
-                    angle: brick.angle || 0,
-                    isKillBrick: brick.isKillBrick || false,
-                    movementType: brick.movementType || null,
-                    moveRange: brick.moveRange ?? DEFAULT_MOVE_RANGE,
-                    moveSpeed: brick.moveSpeed ?? DEFAULT_MOVE_SPEED,
-                };
-            });
-
-            // --- Player Saving ---
-            levelData.player = {
-                relX: gameState.player.x - centerX,
-                yOffset: canvas.height - gameState.player.y
-            };
-
-            // --- Hole Saving ---
-            levelData.hole = {
-                relX: gameState.hole.x - centerX,
-                y: gameState.hole.y
-            };
-
-            this.saveLevelsToStorage();
-            uiManager.showMessage(`Level ${index + 1} ('${levelData.name}') saved!`, 1500);
-            this.populateLevelList(); // Refresh list in case name changed etc.
-        },
-
-        // --- Level List Management ---
-        populateLevelList: function() {
-            levelListElement.innerHTML = '';
-            // Ensure levels array exists and is an array
-             if (!Array.isArray(this.levels)) {
-                 console.error("Cannot populate level list: levels data is not an array.");
-                 this.levels = []; // Reset to empty array if invalid
-                 return;
-             }
-            this.levels.forEach((levelData, index) => {
-                 // Basic check for valid level data object
-                 if (typeof levelData !== 'object' || levelData === null) {
-                     console.warn(`Skipping invalid level data at index ${index} in populateLevelList.`);
-                     return; // Skip this iteration
-                 }
-                const li = document.createElement('li');
-                li.onclick = (e) => {
-                    if (e.target.closest('.level-controls')) return;
-                    this.selectLevelToEdit(index);
-                };
-                if (index === gameState.currentLevelIndex) {
-                    li.classList.add('selected');
-                }
-
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'level-name';
-                nameSpan.textContent = levelData.name || `Level ${index + 1}`; // Fallback name
-                nameSpan.title = "Double-click to rename";
-                nameSpan.ondblclick = (e) => {
-                    e.stopPropagation();
-                    this.renameLevel(index);
-                };
-                li.appendChild(nameSpan);
-
-                const controlsDiv = document.createElement('div');
-                controlsDiv.className = 'level-controls';
-                const upButton = uiManager.createLevelControlButton('&uarr;', "Move Up", () => this.moveLevelUp(index), index === 0);
-                const downButton = uiManager.createLevelControlButton('&darr;', "Move Down", () => this.moveLevelDown(index), index === this.levels.length - 1);
-                controlsDiv.appendChild(upButton);
-                controlsDiv.appendChild(downButton);
-                li.appendChild(controlsDiv);
-
-                levelListElement.appendChild(li);
-            });
-            uiManager.updateLevelDisplays();
-        },
-
-        selectLevelToEdit: function(index) {
-            if (index >= 0 && index < this.levels.length) {
-                // Save current level before switching IF in editor mode? (Decided against auto-save for now)
-                this.loadLevelData(index); // Load the new level data
-                this.populateLevelList(); // Update selection highlight in list
-                if (gameState.mode === 'play') {
-                    gameLogic.startGame(); // Restart if in play mode
-                } else {
-                     drawing.draw(); // Just draw if in editor mode
-                }
-            } else {
-                console.error("Invalid level index selected:", index);
-            }
-        },
-
-        renameLevel: function(index) {
-            if (index < 0 || index >= this.levels.length) return;
-            const currentName = this.levels[index].name || `Level ${index + 1}`;
-            const newName = prompt(`Enter new name for "${currentName}":`, currentName);
-            if (newName === null) return;
-            const trimmedName = newName.trim();
-            if (trimmedName === '') {
-                 uiManager.showMessage("Level name cannot be empty.", 2000);
-                 return;
-            }
-            if (trimmedName !== currentName) {
-                this.levels[index].name = trimmedName;
-                this.saveLevelsToStorage();
-                this.populateLevelList();
-                uiManager.showMessage(`Level ${index + 1} renamed to "${trimmedName}"`, 1500);
-            }
-        },
-
-        addNew: function() {
-            historyManager.saveState();
-            this.levels.push(this._createDefaultLevelData(this.levels.length)); // Use fallback creator
-            this.saveLevelsToStorage();
-            this.selectLevelToEdit(this.levels.length - 1);
-             uiManager.showMessage(`Added new Level ${this.levels.length}`, 1500);
-        },
-
-        deleteSelected: function() {
-            const index = gameState.currentLevelIndex;
-            if (this.levels.length <= 1) {
-                uiManager.showMessage("Cannot delete the last level!", 2000);
-                return;
-            }
-            if (confirm(`Are you sure you want to delete Level ${index + 1} ('${this.levels[index].name}')? This cannot be undone.`)) {
-                historyManager.saveState();
-                this.levels.splice(index, 1);
-                this.saveLevelsToStorage();
-                const newIndex = Math.max(0, index - 1);
-                this.selectLevelToEdit(newIndex);
-                 uiManager.showMessage(`Deleted Level ${index + 1}`, 1500);
-            }
-        },
-
-        moveLevelUp: function(index) {
-            if (index > 0) {
-                historyManager.saveState();
-                [this.levels[index], this.levels[index - 1]] = [this.levels[index - 1], this.levels[index]];
-                this.saveLevelsToStorage();
-                this.selectLevelToEdit(index - 1);
-            }
-        },
-
-        moveLevelDown: function(index) {
-            if (index < this.levels.length - 1) {
-                historyManager.saveState();
-                [this.levels[index], this.levels[index + 1]] = [this.levels[index + 1], this.levels[index]];
-                this.saveLevelsToStorage();
-                this.selectLevelToEdit(index + 1);
-            }
-        },
-
-        // --- Import / Export ---
-        exportSelected: function() {
-            const index = gameState.currentLevelIndex;
-            if (index < 0 || index >= this.levels.length) {
-                uiManager.showMessage("No level selected to export.", 2000);
-                return;
-            }
-            try {
-                this.saveCurrentLevel(); // Ensure current state is saved before export
-                const levelDataToExport = utils.deepClone(this.levels[index]);
-
-                const levelJson = JSON.stringify(levelDataToExport, null, 2);
-                const levelName = utils.sanitizeFilename(levelDataToExport.name || `level_${index + 1}`);
-                const filename = `${levelName}.json`;
-                const blob = new Blob([levelJson], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                uiManager.showMessage(`Level '${levelDataToExport.name}' exported as ${filename}`, 2000);
-            } catch (error) {
-                console.error("Export failed:", error);
-                uiManager.showMessage("Failed to export level.", 2000);
-            }
-        },
-
-        importLevels: function() {
-            importFileInput.click();
-        },
-
-        handleFileImport: function(event) {
-            const files = event.target.files;
-            if (!files || files.length === 0) {
-                return;
-            }
-            historyManager.saveState(); // Save state before import
-
-            let importedCount = 0;
-            let failedCount = 0;
-            const promises = [];
-
-            Array.from(files).forEach(file => {
-                promises.push(new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        try {
-                            const levelData = JSON.parse(e.target.result);
-                            // More thorough validation moved to _validateAndDefaultLevel
-                            this._validateAndDefaultLevel(levelData, this.levels.length); // Validate before adding
-                             // Check again after validation (it might modify inplace or indicate issues)
-                             if (typeof levelData !== 'object' || !levelData.name || !levelData.bricks) {
-                                 throw new Error(`Invalid level structure after validation in file ${file.name}.`);
-                             }
-                            this.levels.push(levelData);
-                            importedCount++;
-                            resolve();
-                        } catch (error) {
-                            console.error(`Failed to parse or validate file ${file.name}:`, error);
-                            failedCount++;
-                            reject(error); // Reject the promise for this file
-                        }
-                    };
-                    reader.onerror = (e) => {
-                        console.error(`Failed to read file ${file.name}:`, e);
-                        failedCount++;
-                        reject(e);
-                    };
-                    reader.readAsText(file);
-                }));
-            });
-
-            Promise.allSettled(promises).then(() => {
-                let message = "";
-                if (importedCount > 0) {
-                    message += `Imported ${importedCount} level(s). `;
-                    this.saveLevelsToStorage();
-                    this.populateLevelList();
-                    this.selectLevelToEdit(this.levels.length - 1); // Select the last imported level
-                }
-                if (failedCount > 0) {
-                    message += `${failedCount} import(s) failed. Check console for details.`;
-                }
-                if (message) {
-                    uiManager.showMessage(message, importedCount > 0 ? 2500 : 3000);
-                }
-                event.target.value = null; // Clear the file input
-            });
-        },
+        saveLevelsToStorage: function() { try { localStorage.setItem(this.storageKey, JSON.stringify(this.levels)); console.log("Saved levels to localStorage."); } catch (e) { console.error("Failed to save levels to localStorage:", e); uiManager.showMessage("Error saving levels. Storage might be full.", 3000); } },
+        _validateAndDefaultLevel: function(lvl, index) { const defaultLvl = this._createDefaultLevelData(index); if (typeof lvl !== 'object' || lvl === null) return; lvl.name = lvl.name || `Level ${index + 1}`; lvl.player = lvl.player || defaultLvl.player; if (lvl.player && !lvl.player.yOffset) lvl.player.yOffset = PLAYER_BOTTOM_OFFSET; lvl.hole = lvl.hole || defaultLvl.hole; lvl.bricks = Array.isArray(lvl.bricks) ? lvl.bricks : defaultLvl.bricks; lvl.bricks.forEach(brick => { if (typeof brick !== 'object' || brick === null) return; brick.isKillBrick = brick.isKillBrick || false; brick.movementType = brick.movementType || null; brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE; brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED; brick.angle = brick.angle || 0; brick.x = brick.x ?? 0; brick.y = brick.y ?? 0; brick.width = brick.width ?? 100; brick.height = brick.height ?? 20; }); },
+        _createDefaultLevelData: function(levelIndex = 0) { console.log("Creating fallback default level data."); const fallbackBricks = [ { x: -150, y: 300, width: 200, height: 15, angle: -Math.PI / 16, isKillBrick: false, movementType: null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED }, { x: 0, y: 180, width: 100, height: 15, angle: 0, isKillBrick: false, movementType: 'horizontal', moveRange: 80, moveSpeed: 1.5 }, { x: 150, y: 250, width: 15, height: 80, angle: 0, isKillBrick: true, movementType: 'vertical', moveRange: 40, moveSpeed: 0.8 } ]; return { name: `Fallback Level ${levelIndex + 1}`, bricks: fallbackBricks, player: { relX: 0, yOffset: PLAYER_BOTTOM_OFFSET }, hole: { relX: 0, y: HOLE_DEFAULT_Y } }; },
+        loadLevelData: function(index) { if (index < 0 || index >= this.levels.length) { console.error("Attempted to load invalid level index:", index); index = 0; if (this.levels.length === 0) { this.levels.push(this._createDefaultLevelData(0)); } } const levelData = this.levels[index]; if (typeof levelData !== 'object' || levelData === null || !Array.isArray(levelData.bricks)) { console.error("Invalid level data structure at index:", index, levelData); uiManager.showMessage(`Error: Corrupted level data for Level ${index + 1}.`, 3000); return; } const centerX = canvas.width / 2; gameState.bricks = levelData.bricks.map(brickData => { if (typeof brickData !== 'object' || brickData === null) { console.warn("Skipping invalid brick data during load:", brickData); return null; } const initialAbsX = centerX + (brickData.x || 0); const initialAbsY = brickData.y || 0; return { ...brickData, x: initialAbsX, y: initialAbsY, initialX: initialAbsX, initialY: initialAbsY, isKillBrick: brickData.isKillBrick || false, movementType: brickData.movementType || null, moveRange: brickData.moveRange ?? DEFAULT_MOVE_RANGE, moveSpeed: brickData.moveSpeed ?? DEFAULT_MOVE_SPEED, angle: brickData.angle || 0, width: brickData.width ?? 100, height: brickData.height ?? 20, }; }).filter(brick => brick !== null); const playerDefaults = this._createDefaultLevelData(0).player; const currentPlayerData = levelData.player || playerDefaults; gameState.player.x = centerX + (currentPlayerData.relX || 0); gameState.player.y = canvas.height - (currentPlayerData.yOffset || PLAYER_BOTTOM_OFFSET); const holeDefaults = this._createDefaultLevelData(0).hole; const currentHoleData = levelData.hole || holeDefaults; gameState.hole.x = centerX + (currentHoleData.relX || 0); gameState.hole.y = currentHoleData.y || HOLE_DEFAULT_Y; gameState.currentLevelIndex = index; uiManager.updateLevelDisplays(); gameLogic.resetBall(); editor.resetSelectionAndHistory(); historyManager.saveState(true); uiManager.updateBrickPropertiesUI(); },
+        saveCurrentLevel: function() { if (gameState.mode !== 'editor') return; const index = gameState.currentLevelIndex; if (index < 0 || index >= this.levels.length) { console.error("Cannot save, invalid level index selected:", index); uiManager.showMessage("Error: Invalid level selected for saving.", 2000); return; } const centerX = canvas.width / 2; const levelData = this.levels[index]; levelData.bricks = gameState.bricks.map(brick => { const savedRelX = (brick.initialX !== undefined ? brick.initialX : brick.x) - centerX; const savedAbsY = brick.initialY !== undefined ? brick.initialY : brick.y; return { x: savedRelX, y: savedAbsY, width: brick.width, height: brick.height, angle: brick.angle || 0, isKillBrick: brick.isKillBrick || false, movementType: brick.movementType || null, moveRange: brick.moveRange ?? DEFAULT_MOVE_RANGE, moveSpeed: brick.moveSpeed ?? DEFAULT_MOVE_SPEED, }; }); levelData.player = { relX: gameState.player.x - centerX, yOffset: canvas.height - gameState.player.y }; levelData.hole = { relX: gameState.hole.x - centerX, y: gameState.hole.y }; this.saveLevelsToStorage(); uiManager.showMessage(`Level ${index + 1} ('${levelData.name}') saved!`, 1500); this.populateLevelList(); },
+        populateLevelList: function() { levelListElement.innerHTML = ''; if (!Array.isArray(this.levels)) { console.error("Cannot populate level list: levels data is not an array."); this.levels = []; return; } this.levels.forEach((levelData, index) => { if (typeof levelData !== 'object' || levelData === null) { console.warn(`Skipping invalid level data at index ${index} in populateLevelList.`); return; } const li = document.createElement('li'); li.onclick = (e) => { if (e.target.closest('.level-controls')) return; this.selectLevelToEdit(index); }; if (index === gameState.currentLevelIndex) { li.classList.add('selected'); } const nameSpan = document.createElement('span'); nameSpan.className = 'level-name'; nameSpan.textContent = levelData.name || `Level ${index + 1}`; nameSpan.title = "Double-click to rename"; nameSpan.ondblclick = (e) => { e.stopPropagation(); this.renameLevel(index); }; li.appendChild(nameSpan); const controlsDiv = document.createElement('div'); controlsDiv.className = 'level-controls'; const upButton = uiManager.createLevelControlButton('&uarr;', "Move Up", () => this.moveLevelUp(index), index === 0); const downButton = uiManager.createLevelControlButton('&darr;', "Move Down", () => this.moveLevelDown(index), index === this.levels.length - 1); controlsDiv.appendChild(upButton); controlsDiv.appendChild(downButton); li.appendChild(controlsDiv); levelListElement.appendChild(li); }); uiManager.updateLevelDisplays(); },
+        selectLevelToEdit: function(index) { if (index >= 0 && index < this.levels.length) { this.loadLevelData(index); this.populateLevelList(); if (gameState.mode === 'play') { gameLogic.startGame(); } else { drawing.draw(); } } else { console.error("Invalid level index selected:", index); } },
+        renameLevel: function(index) { if (index < 0 || index >= this.levels.length) return; const currentName = this.levels[index].name || `Level ${index + 1}`; const newName = prompt(`Enter new name for "${currentName}":`, currentName); if (newName === null) return; const trimmedName = newName.trim(); if (trimmedName === '') { uiManager.showMessage("Level name cannot be empty.", 2000); return; } if (trimmedName !== currentName) { this.levels[index].name = trimmedName; this.saveLevelsToStorage(); this.populateLevelList(); uiManager.showMessage(`Level ${index + 1} renamed to "${trimmedName}"`, 1500); } },
+        addNew: function() { historyManager.saveState(); this.levels.push(this._createDefaultLevelData(this.levels.length)); this.saveLevelsToStorage(); this.selectLevelToEdit(this.levels.length - 1); uiManager.showMessage(`Added new Level ${this.levels.length}`, 1500); },
+        deleteSelected: function() { const index = gameState.currentLevelIndex; if (this.levels.length <= 1) { uiManager.showMessage("Cannot delete the last level!", 2000); return; } if (confirm(`Are you sure you want to delete Level ${index + 1} ('${this.levels[index].name}')? This cannot be undone.`)) { historyManager.saveState(); this.levels.splice(index, 1); this.saveLevelsToStorage(); const newIndex = Math.max(0, index - 1); this.selectLevelToEdit(newIndex); uiManager.showMessage(`Deleted Level ${index + 1}`, 1500); } },
+        moveLevelUp: function(index) { if (index > 0) { historyManager.saveState(); [this.levels[index], this.levels[index - 1]] = [this.levels[index - 1], this.levels[index]]; this.saveLevelsToStorage(); this.selectLevelToEdit(index - 1); } },
+        moveLevelDown: function(index) { if (index < this.levels.length - 1) { historyManager.saveState(); [this.levels[index], this.levels[index + 1]] = [this.levels[index + 1], this.levels[index]]; this.saveLevelsToStorage(); this.selectLevelToEdit(index + 1); } },
+        exportSelected: function() { const index = gameState.currentLevelIndex; if (index < 0 || index >= this.levels.length) { uiManager.showMessage("No level selected to export.", 2000); return; } try { this.saveCurrentLevel(); const levelDataToExport = utils.deepClone(this.levels[index]); const levelJson = JSON.stringify(levelDataToExport, null, 2); const levelName = utils.sanitizeFilename(levelDataToExport.name || `level_${index + 1}`); const filename = `${levelName}.json`; const blob = new Blob([levelJson], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); uiManager.showMessage(`Level '${levelDataToExport.name}' exported as ${filename}`, 2000); } catch (error) { console.error("Export failed:", error); uiManager.showMessage("Failed to export level.", 2000); } },
+        importLevels: function() { importFileInput.click(); },
+        handleFileImport: function(event) { const files = event.target.files; if (!files || files.length === 0) { return; } historyManager.saveState(); let importedCount = 0; let failedCount = 0; const promises = []; Array.from(files).forEach(file => { promises.push(new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = (e) => { try { const levelData = JSON.parse(e.target.result); this._validateAndDefaultLevel(levelData, this.levels.length); if (typeof levelData !== 'object' || !levelData.name || !levelData.bricks) { throw new Error(`Invalid level structure after validation in file ${file.name}.`); } this.levels.push(levelData); importedCount++; resolve(); } catch (error) { console.error(`Failed to parse or validate file ${file.name}:`, error); failedCount++; reject(error); } }; reader.onerror = (e) => { console.error(`Failed to read file ${file.name}:`, e); failedCount++; reject(e); }; reader.readAsText(file); })); }); Promise.allSettled(promises).then(() => { let message = ""; if (importedCount > 0) { message += `Imported ${importedCount} level(s). `; this.saveLevelsToStorage(); this.populateLevelList(); this.selectLevelToEdit(this.levels.length - 1); } if (failedCount > 0) { message += `${failedCount} import(s) failed. Check console for details.`; } if (message) { uiManager.showMessage(message, importedCount > 0 ? 2500 : 3000); } event.target.value = null; }); },
     };
 
     // --- Vector Math Helper --- (No Changes)
@@ -705,9 +301,8 @@
     }
 
     // --- Initialization ---
-    // *** MODIFIED: Now async to wait for level loading ***
     async function init() {
-        console.log("Initializing Playground Bounce...");
+        console.log("Initializing Bounce Back..."); // *** MODIFIED: Game Name ***
         // Setup Event Listeners
         window.addEventListener("resize", eventHandlers.handleResize);
         canvas.addEventListener("contextmenu", eventHandlers.handleContextMenu);
@@ -738,9 +333,10 @@
 
         // Set initial state based on loaded levels
         utils.resizeCanvas(); // Initial resize sets canvas size and calls loadLevelData for index 0
-        // populateLevelList is called within loadLevelsFromStorage
-        gameLogic.switchToEditorMode(); // Start in editor mode
-        uiManager.showMenu(); // Show menu initially
+
+        // *** MODIFIED: Start in Play Mode with Menu Hidden ***
+        gameLogic.startGame(); // Start in play mode
+        uiManager.hideMenu(); // Start with menu hidden
 
         // Start the game loop
         lastTimestamp = performance.now();
