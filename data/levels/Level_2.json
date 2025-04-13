@@ -1,0 +1,79 @@
+{
+  "name": "Level 2",
+  "bricks": [
+    {
+      "x": 294,
+      "y": 671,
+      "width": 100,
+      "height": 20,
+      "angle": 2.334046213752837,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveRange": 50,
+      "moveSpeed": 1
+    },
+    {
+      "x": 268,
+      "y": 84,
+      "width": 100,
+      "height": 20,
+      "angle": 3.9388141864433446,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveRange": 50,
+      "moveSpeed": 1
+    },
+    {
+      "x": -114.51276197402524,
+      "y": 93.09498337783475,
+      "width": 159.8171826729734,
+      "height": 19.55679223373435,
+      "angle": 1.561060890288295,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveRange": 50,
+      "moveSpeed": 1
+    },
+    {
+      "x": -207,
+      "y": 645,
+      "width": 100,
+      "height": 20,
+      "angle": 2.3587619601016336,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveRange": 50,
+      "moveSpeed": 1
+    },
+    {
+      "x": -25,
+      "y": 23,
+      "width": 158,
+      "height": 20,
+      "angle": 0,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveRange": 50,
+      "moveSpeed": 1
+    },
+    {
+      "x": -24,
+      "y": 162,
+      "width": 100,
+      "height": 20,
+      "angle": 0,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveRange": 50,
+      "moveSpeed": 1
+    }
+  ],
+  "player": {
+    "relX": -163,
+    "yOffset": 38
+  },
+  "hole": {
+    "relX": 0,
+    "y": 100
+  }
+}
