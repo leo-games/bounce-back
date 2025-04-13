@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground Bounce - Moving Bricks (Improved)</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Playground Bounce - Data-Driven Levels</title> <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -124,7 +123,6 @@
     const messageText = document.getElementById("messageText");
     const marqueeBox = document.getElementById("marqueeBox");
     const importFileInput = document.getElementById("importFile");
-    // *** NEW: Property Input References ***
     const brickPropertiesDiv = document.getElementById("brickProperties");
     const propMoveRangeInput = document.getElementById("propMoveRange");
     const propMoveSpeedInput = document.getElementById("propMoveSpeed");
@@ -165,6 +163,11 @@
     const CLICK_THRESHOLD_SQ = 9; // Squared pixel distance to differentiate click vs drag
     const MOVER_RANGE_INDICATOR_COLOR = "rgba(100, 100, 255, 0.5)"; // Color for visual range line
     const MOVER_RANGE_INDICATOR_WIDTH = 2;
+    // *** NEW: Default level file paths ***
+    const DEFAULT_LEVEL_FILES = [
+        './data/levels/Level_1.json' // Add more default level file paths here
+    ];
+
 
     // --- Game State Variables ---
     let gameState = {
@@ -193,40 +196,88 @@
         historyIndex: -1,
         isNudging: false,
         contextMenuTarget: null, // { type: 'empty'/'brick', x?, y?, index? }
-        // Flag to prevent infinite loops when updating properties from input changes
         isUpdatingPropertiesFromInput: false,
     };
 
     // --- Level Data ---
     let levelManager = {
         levels: [], // Array of level data objects
-        storageKey: 'customLevels_v2', // Changed key to avoid conflicts with old format
+        storageKey: 'customLevels_v2',
 
         // --- Level Loading/Saving ---
-        loadLevelsFromStorage: function() {
+        // *** MODIFIED: Now asynchronous to handle fetching default levels ***
+        loadLevelsFromStorage: async function() {
             const storedLevels = localStorage.getItem(this.storageKey);
-            let loadedSuccessfully = false;
+            let loadedFromStorage = false;
+
+            // 1. Try loading from localStorage first
             if (storedLevels) {
                 try {
-                    this.levels = JSON.parse(storedLevels);
+                    const parsedLevels = JSON.parse(storedLevels);
                     // Basic validation
-                    if (!Array.isArray(this.levels) || this.levels.length === 0 || typeof this.levels[0] !== 'object' || !this.levels[0].bricks) {
-                        throw new Error("Invalid level structure in localStorage.");
+                    if (Array.isArray(parsedLevels) && parsedLevels.length > 0 && typeof parsedLevels[0] === 'object' && parsedLevels[0].bricks) {
+                        this.levels = parsedLevels;
+                        // Ensure defaults and structure for each level from storage
+                        this.levels.forEach((lvl, index) => this._validateAndDefaultLevel(lvl, index));
+                        loadedFromStorage = true;
+                        console.log("Loaded levels from localStorage.");
+                    } else {
+                        console.warn("Invalid level structure in localStorage.");
                     }
-                    // Ensure defaults and structure for each level
-                    this.levels.forEach((lvl, index) => this._validateAndDefaultLevel(lvl, index));
-                    loadedSuccessfully = true;
                 } catch (e) {
                     console.error("Failed to parse levels from localStorage:", e);
-                    uiManager.showMessage("Error loading levels from storage. Resetting to default.", 3000);
+                    uiManager.showMessage("Error loading saved levels. Loading defaults.", 3000);
                     this.levels = []; // Reset if parsing failed
                 }
             }
 
-            if (!loadedSuccessfully || this.levels.length === 0) {
-                this.levels = [this._createDefaultLevelData(0)];
-                this.saveLevelsToStorage();
+            // 2. If localStorage loading failed or was empty, fetch defaults
+            if (!loadedFromStorage) {
+                console.log("No valid levels in localStorage, attempting to fetch defaults...");
+                try {
+                    // Fetch all default level files concurrently
+                    const responses = await Promise.all(
+                        DEFAULT_LEVEL_FILES.map(url => fetch(url))
+                    );
+
+                    // Check if all fetches were successful
+                    const allOk = responses.every(res => res.ok);
+                    if (!allOk) {
+                         const failed = responses.filter(res => !res.ok);
+                         throw new Error(`Failed to fetch default levels: ${failed.map(f => f.url + ' ('+f.statusText+')').join(', ')}`);
+                    }
+
+                    // Parse JSON from all responses
+                    const fetchedLevelData = await Promise.all(
+                        responses.map(res => res.json())
+                    );
+
+                    // Validate and assign fetched levels
+                    if (fetchedLevelData.length > 0) {
+                        this.levels = fetchedLevelData;
+                        this.levels.forEach((lvl, index) => this._validateAndDefaultLevel(lvl, index));
+                        console.log(`Successfully fetched and validated ${this.levels.length} default levels.`);
+                        this.saveLevelsToStorage(); // Save the fetched defaults to localStorage
+                    } else {
+                         throw new Error("Fetched default level data was empty.");
+                    }
+
+                } catch (fetchError) {
+                    console.error("Failed to fetch or process default levels:", fetchError);
+                    uiManager.showMessage("Could not load default levels. Using fallback.", 3000);
+                    // Fallback to hardcoded default if fetching fails
+                    this.levels = [this._createDefaultLevelData(0)];
+                    // Don't save the fallback to storage immediately, let user save manually
+                }
             }
+
+            // Ensure there's at least one level, even after potential errors
+            if (this.levels.length === 0) {
+                 console.warn("Level loading resulted in empty array, creating fallback.");
+                 this.levels = [this._createDefaultLevelData(0)];
+            }
+
+            // Set initial level index and update UI
             gameState.currentLevelIndex = 0;
             this.populateLevelList();
         },
@@ -234,6 +285,7 @@
         saveLevelsToStorage: function() {
             try {
                 localStorage.setItem(this.storageKey, JSON.stringify(this.levels));
+                 console.log("Saved levels to localStorage.");
             } catch (e) {
                 console.error("Failed to save levels to localStorage:", e);
                 uiManager.showMessage("Error saving levels. Storage might be full.", 3000);
@@ -242,44 +294,46 @@
 
         // Validates a single level object and applies defaults
         _validateAndDefaultLevel: function(lvl, index) {
-            const defaultLvl = this._createDefaultLevelData(index);
-            if (!lvl.name) lvl.name = `Level ${index + 1}`;
-            if (!lvl.player) lvl.player = defaultLvl.player;
-            if (lvl.player && !lvl.player.yOffset) lvl.player.yOffset = PLAYER_BOTTOM_OFFSET; // Add missing offset
-            if (!lvl.hole) lvl.hole = defaultLvl.hole;
-            if (!Array.isArray(lvl.bricks)) lvl.bricks = defaultLvl.bricks;
+            const defaultLvl = this._createDefaultLevelData(index); // Use fallback for defaults
+            // Basic structure checks
+            if (typeof lvl !== 'object' || lvl === null) return; // Skip invalid level object
 
-            // Ensure defaults for brick properties (important for loading older saves)
+            lvl.name = lvl.name || `Level ${index + 1}`;
+            lvl.player = lvl.player || defaultLvl.player;
+            if (lvl.player && !lvl.player.yOffset) lvl.player.yOffset = PLAYER_BOTTOM_OFFSET;
+            lvl.hole = lvl.hole || defaultLvl.hole;
+            lvl.bricks = Array.isArray(lvl.bricks) ? lvl.bricks : defaultLvl.bricks;
+
+            // Ensure defaults for brick properties
             lvl.bricks.forEach(brick => {
+                if (typeof brick !== 'object' || brick === null) return; // Skip invalid brick object
                 brick.isKillBrick = brick.isKillBrick || false;
                 brick.movementType = brick.movementType || null;
-                brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE; // Use ?? for default
-                brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED; // Use ?? for default
-                // initialX/Y will be calculated/validated in loadLevelData based on saved x/y
+                brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE;
+                brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED;
                 brick.angle = brick.angle || 0;
+                // Ensure essential properties exist, even if default is 0/null
+                brick.x = brick.x ?? 0;
+                brick.y = brick.y ?? 0;
+                brick.width = brick.width ?? 100;
+                brick.height = brick.height ?? 20;
             });
         },
 
-        // Creates a default level structure
+        // Creates a default level structure (NOW USED AS FALLBACK)
         _createDefaultLevelData: function(levelIndex = 0) {
-            let defaultBricks = [];
-            // Example bricks for the first level
-            if (levelIndex === 0) {
-                defaultBricks = [
-                    // Static brick (x is relative to center)
+             console.log("Creating fallback default level data.");
+            // Example bricks for the first level (fallback)
+            const fallbackBricks = [
                     { x: -150, y: 300, width: 200, height: 15, angle: -Math.PI / 16, isKillBrick: false, movementType: null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED },
-                    // Horizontal Mover (x is relative to center)
                     { x: 0, y: 180, width: 100, height: 15, angle: 0, isKillBrick: false, movementType: 'horizontal', moveRange: 80, moveSpeed: 1.5 },
-                    // Vertical Kill Mover (x is relative to center)
                     { x: 150, y: 250, width: 15, height: 80, angle: 0, isKillBrick: true, movementType: 'vertical', moveRange: 40, moveSpeed: 0.8 }
                 ];
-            }
-             // Note: initialX/Y are NOT stored here; they are derived from x/y on load.
             return {
-                name: `Level ${levelIndex + 1}`,
-                bricks: defaultBricks,
-                player: { relX: 0, yOffset: PLAYER_BOTTOM_OFFSET }, // Player X relative to center
-                hole: { relX: 0, y: HOLE_DEFAULT_Y } // Hole X relative to center
+                name: `Fallback Level ${levelIndex + 1}`,
+                bricks: fallbackBricks,
+                player: { relX: 0, yOffset: PLAYER_BOTTOM_OFFSET },
+                hole: { relX: 0, y: HOLE_DEFAULT_Y }
             };
         },
 
@@ -289,43 +343,59 @@
                 console.error("Attempted to load invalid level index:", index);
                 index = 0; // Fallback to first level
                 if (this.levels.length === 0) { // Should not happen if loadLevelsFromStorage worked
-                    this.levels.push(this._createDefaultLevelData(0));
-                    this.saveLevelsToStorage();
+                    this.levels.push(this._createDefaultLevelData(0)); // Create fallback if truly empty
                 }
             }
             const levelData = this.levels[index];
+            // Ensure levelData itself is valid before proceeding
+            if (typeof levelData !== 'object' || levelData === null || !Array.isArray(levelData.bricks)) {
+                 console.error("Invalid level data structure at index:", index, levelData);
+                 uiManager.showMessage(`Error: Corrupted level data for Level ${index + 1}.`, 3000);
+                 // Optionally, replace the corrupted level with a default?
+                 // this.levels[index] = this._createDefaultLevelData(index);
+                 // levelData = this.levels[index];
+                 return; // Or simply stop loading this level
+            }
+
             const centerX = canvas.width / 2;
 
             // --- Brick Loading ---
-            // Map saved brick data to runtime brick state
             gameState.bricks = levelData.bricks.map(brickData => {
-                // Calculate absolute initial position from saved relative X and absolute Y
-                // The saved 'x' and 'y' represent the intended *initial* position.
-                const initialAbsX = centerX + (brickData.x || 0); // Use saved relative X
-                const initialAbsY = brickData.y || 0; // Use saved absolute Y
+                // Basic check for valid brick data object
+                if (typeof brickData !== 'object' || brickData === null) {
+                    console.warn("Skipping invalid brick data during load:", brickData);
+                    return null; // Skip this invalid brick
+                }
+                const initialAbsX = centerX + (brickData.x || 0);
+                const initialAbsY = brickData.y || 0;
 
                 return {
-                    ...brickData, // Copy all saved properties first
-                    x: initialAbsX, // Current position starts at initial position
-                    y: initialAbsY, // Current position starts at initial position
-                    initialX: initialAbsX, // Store absolute initial X
-                    initialY: initialAbsY, // Store absolute initial Y
-                    // Ensure defaults again (belt-and-suspenders)
+                    ...brickData,
+                    x: initialAbsX,
+                    y: initialAbsY,
+                    initialX: initialAbsX,
+                    initialY: initialAbsY,
                     isKillBrick: brickData.isKillBrick || false,
                     movementType: brickData.movementType || null,
-                    moveRange: brickData.moveRange ?? DEFAULT_MOVE_RANGE, // Use nullish coalescing
-                    moveSpeed: brickData.moveSpeed ?? DEFAULT_MOVE_SPEED, // Use nullish coalescing
+                    moveRange: brickData.moveRange ?? DEFAULT_MOVE_RANGE,
+                    moveSpeed: brickData.moveSpeed ?? DEFAULT_MOVE_SPEED,
                     angle: brickData.angle || 0,
+                    width: brickData.width ?? 100, // Ensure width/height have defaults
+                    height: brickData.height ?? 20,
                 };
-            });
+            }).filter(brick => brick !== null); // Filter out any null bricks from invalid data
 
             // --- Player Loading ---
-            gameState.player.x = centerX + (levelData.player.relX || 0);
-            gameState.player.y = canvas.height - (levelData.player.yOffset || PLAYER_BOTTOM_OFFSET);
+            const playerDefaults = this._createDefaultLevelData(0).player;
+            const currentPlayerData = levelData.player || playerDefaults;
+            gameState.player.x = centerX + (currentPlayerData.relX || 0);
+            gameState.player.y = canvas.height - (currentPlayerData.yOffset || PLAYER_BOTTOM_OFFSET);
 
             // --- Hole Loading ---
-            gameState.hole.x = centerX + (levelData.hole.relX || 0);
-            gameState.hole.y = levelData.hole.y || HOLE_DEFAULT_Y;
+             const holeDefaults = this._createDefaultLevelData(0).hole;
+             const currentHoleData = levelData.hole || holeDefaults;
+            gameState.hole.x = centerX + (currentHoleData.relX || 0);
+            gameState.hole.y = currentHoleData.y || HOLE_DEFAULT_Y;
 
             // --- Update State ---
             gameState.currentLevelIndex = index;
@@ -333,7 +403,7 @@
             gameLogic.resetBall();
             editor.resetSelectionAndHistory(); // Reset editor state when loading
             historyManager.saveState(true); // Save the *initialized* state as the first history entry
-            uiManager.updateBrickPropertiesUI(); // *** NEW: Update properties UI on level load ***
+            uiManager.updateBrickPropertiesUI();
         },
 
         // Saves the current game state back into the levels array and storage
@@ -349,25 +419,19 @@
             const levelData = this.levels[index];
 
             // --- Brick Saving ---
-            // Map runtime brick state back to storable data
             levelData.bricks = gameState.bricks.map(brick => {
-                // Save the *initial* position. Convert initial X to relative, keep initial Y absolute.
                 const savedRelX = (brick.initialX !== undefined ? brick.initialX : brick.x) - centerX;
                 const savedAbsY = brick.initialY !== undefined ? brick.initialY : brick.y;
-
-                // Only save necessary properties
                 return {
-                    x: savedRelX, // Save initial X relative to center
-                    y: savedAbsY, // Save initial Y absolute
+                    x: savedRelX,
+                    y: savedAbsY,
                     width: brick.width,
                     height: brick.height,
                     angle: brick.angle || 0,
                     isKillBrick: brick.isKillBrick || false,
                     movementType: brick.movementType || null,
-                    moveRange: brick.moveRange ?? DEFAULT_MOVE_RANGE, // Save current value or default
-                    moveSpeed: brick.moveSpeed ?? DEFAULT_MOVE_SPEED, // Save current value or default
-                    // No need to explicitly save initialX/initialY in the file,
-                    // as they are derived from the saved x/y on load.
+                    moveRange: brick.moveRange ?? DEFAULT_MOVE_RANGE,
+                    moveSpeed: brick.moveSpeed ?? DEFAULT_MOVE_SPEED,
                 };
             });
 
@@ -391,10 +455,20 @@
         // --- Level List Management ---
         populateLevelList: function() {
             levelListElement.innerHTML = '';
+            // Ensure levels array exists and is an array
+             if (!Array.isArray(this.levels)) {
+                 console.error("Cannot populate level list: levels data is not an array.");
+                 this.levels = []; // Reset to empty array if invalid
+                 return;
+             }
             this.levels.forEach((levelData, index) => {
+                 // Basic check for valid level data object
+                 if (typeof levelData !== 'object' || levelData === null) {
+                     console.warn(`Skipping invalid level data at index ${index} in populateLevelList.`);
+                     return; // Skip this iteration
+                 }
                 const li = document.createElement('li');
                 li.onclick = (e) => {
-                    // Prevent selection if clicking controls
                     if (e.target.closest('.level-controls')) return;
                     this.selectLevelToEdit(index);
                 };
@@ -402,18 +476,16 @@
                     li.classList.add('selected');
                 }
 
-                // Level Name Span (Editable)
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'level-name';
-                nameSpan.textContent = levelData.name || `Level ${index + 1}`;
+                nameSpan.textContent = levelData.name || `Level ${index + 1}`; // Fallback name
                 nameSpan.title = "Double-click to rename";
                 nameSpan.ondblclick = (e) => {
-                    e.stopPropagation(); // Prevent li click
+                    e.stopPropagation();
                     this.renameLevel(index);
                 };
                 li.appendChild(nameSpan);
 
-                // Level Controls (Up/Down)
                 const controlsDiv = document.createElement('div');
                 controlsDiv.className = 'level-controls';
                 const upButton = uiManager.createLevelControlButton('&uarr;', "Move Up", () => this.moveLevelUp(index), index === 0);
@@ -429,19 +501,13 @@
 
         selectLevelToEdit: function(index) {
             if (index >= 0 && index < this.levels.length) {
-                // Save current level before switching IF in editor mode
-                if (gameState.mode === 'editor') {
-                   // Optional: Could auto-save here, or rely on manual save button
-                   // this.saveCurrentLevel(); // Be careful about unintended saves
-                }
-                this.loadLevelData(index); // Load the new level data (this also resets selection and updates properties UI)
+                // Save current level before switching IF in editor mode? (Decided against auto-save for now)
+                this.loadLevelData(index); // Load the new level data
                 this.populateLevelList(); // Update selection highlight in list
-                // If switching while in play mode, restart the new level
                 if (gameState.mode === 'play') {
-                    gameLogic.startGame();
+                    gameLogic.startGame(); // Restart if in play mode
                 } else {
-                    // If in editor mode, just draw the newly loaded level
-                     drawing.draw();
+                     drawing.draw(); // Just draw if in editor mode
                 }
             } else {
                 console.error("Invalid level index selected:", index);
@@ -452,7 +518,7 @@
             if (index < 0 || index >= this.levels.length) return;
             const currentName = this.levels[index].name || `Level ${index + 1}`;
             const newName = prompt(`Enter new name for "${currentName}":`, currentName);
-            if (newName === null) return; // User cancelled
+            if (newName === null) return;
             const trimmedName = newName.trim();
             if (trimmedName === '') {
                  uiManager.showMessage("Level name cannot be empty.", 2000);
@@ -461,16 +527,16 @@
             if (trimmedName !== currentName) {
                 this.levels[index].name = trimmedName;
                 this.saveLevelsToStorage();
-                this.populateLevelList(); // Update the list display
+                this.populateLevelList();
                 uiManager.showMessage(`Level ${index + 1} renamed to "${trimmedName}"`, 1500);
             }
         },
 
         addNew: function() {
-            historyManager.saveState(); // Save state before modifying levels array
-            this.levels.push(this._createDefaultLevelData(this.levels.length));
+            historyManager.saveState();
+            this.levels.push(this._createDefaultLevelData(this.levels.length)); // Use fallback creator
             this.saveLevelsToStorage();
-            this.selectLevelToEdit(this.levels.length - 1); // Select the new level
+            this.selectLevelToEdit(this.levels.length - 1);
              uiManager.showMessage(`Added new Level ${this.levels.length}`, 1500);
         },
 
@@ -481,11 +547,10 @@
                 return;
             }
             if (confirm(`Are you sure you want to delete Level ${index + 1} ('${this.levels[index].name}')? This cannot be undone.`)) {
-                historyManager.saveState(); // Save state before deleting (though this action isn't directly undoable via ctrl+z)
+                historyManager.saveState();
                 this.levels.splice(index, 1);
-                // Re-validate names/indices? Not strictly necessary as they are generated on load/display
                 this.saveLevelsToStorage();
-                const newIndex = Math.max(0, index - 1); // Select previous or first
+                const newIndex = Math.max(0, index - 1);
                 this.selectLevelToEdit(newIndex);
                  uiManager.showMessage(`Deleted Level ${index + 1}`, 1500);
             }
@@ -493,19 +558,19 @@
 
         moveLevelUp: function(index) {
             if (index > 0) {
-                historyManager.saveState(); // Save state before reordering
+                historyManager.saveState();
                 [this.levels[index], this.levels[index - 1]] = [this.levels[index - 1], this.levels[index]];
                 this.saveLevelsToStorage();
-                this.selectLevelToEdit(index - 1); // Select the moved level
+                this.selectLevelToEdit(index - 1);
             }
         },
 
         moveLevelDown: function(index) {
             if (index < this.levels.length - 1) {
-                historyManager.saveState(); // Save state before reordering
+                historyManager.saveState();
                 [this.levels[index], this.levels[index + 1]] = [this.levels[index + 1], this.levels[index]];
                 this.saveLevelsToStorage();
-                this.selectLevelToEdit(index + 1); // Select the moved level
+                this.selectLevelToEdit(index + 1);
             }
         },
 
@@ -517,11 +582,8 @@
                 return;
             }
             try {
-                // Create a clean copy of the level data for export
-                // Important: Use the *current* state if unsaved changes exist?
-                // Or save first? Let's export the currently *loaded* state representation.
-                this.saveCurrentLevel(); // Ensure latest edits are reflected in the stored data
-                const levelDataToExport = utils.deepClone(this.levels[index]); // Clone the stored data
+                this.saveCurrentLevel(); // Ensure current state is saved before export
+                const levelDataToExport = utils.deepClone(this.levels[index]);
 
                 const levelJson = JSON.stringify(levelDataToExport, null, 2);
                 const levelName = utils.sanitizeFilename(levelDataToExport.name || `level_${index + 1}`);
@@ -543,7 +605,7 @@
         },
 
         importLevels: function() {
-            importFileInput.click(); // Trigger file input
+            importFileInput.click();
         },
 
         handleFileImport: function(event) {
@@ -563,23 +625,19 @@
                     reader.onload = (e) => {
                         try {
                             const levelData = JSON.parse(e.target.result);
-                            // More thorough validation
-                            if (typeof levelData !== 'object' || levelData === null ||
-                                !levelData.name || typeof levelData.name !== 'string' ||
-                                !levelData.player || typeof levelData.player !== 'object' ||
-                                !levelData.hole || typeof levelData.hole !== 'object' ||
-                                !Array.isArray(levelData.bricks)) {
-                                throw new Error(`Invalid level structure in file ${file.name}.`);
-                            }
-                            // Validate and apply defaults before adding
-                            this._validateAndDefaultLevel(levelData, this.levels.length); // Validate as if it's the next level
+                            // More thorough validation moved to _validateAndDefaultLevel
+                            this._validateAndDefaultLevel(levelData, this.levels.length); // Validate before adding
+                             // Check again after validation (it might modify inplace or indicate issues)
+                             if (typeof levelData !== 'object' || !levelData.name || !levelData.bricks) {
+                                 throw new Error(`Invalid level structure after validation in file ${file.name}.`);
+                             }
                             this.levels.push(levelData);
                             importedCount++;
                             resolve();
                         } catch (error) {
                             console.error(`Failed to parse or validate file ${file.name}:`, error);
                             failedCount++;
-                            reject(error);
+                            reject(error); // Reject the promise for this file
                         }
                     };
                     reader.onerror = (e) => {
@@ -610,1969 +668,29 @@
         },
     };
 
-    // --- Vector Math Helper ---
-    const Vec = {
-        create: (x = 0, y = 0) => ({ x, y }),
-        add: (v1, v2) => ({ x: v1.x + v2.x, y: v1.y + v2.y }),
-        sub: (v1, v2) => ({ x: v1.x - v2.x, y: v1.y - v2.y }),
-        scale: (v, s) => ({ x: v.x * s, y: v.y * s }),
-        dot: (v1, v2) => v1.x * v2.x + v1.y * v2.y,
-        lenSq: (v) => v.x * v.x + v.y * v.y,
-        len: (v) => Math.sqrt(Vec.lenSq(v)),
-        normalize: (v) => {
-            const l = Vec.len(v);
-            return l === 0 ? Vec.create() : Vec.scale(v, 1 / l);
-        },
-        // Perpendicular vector (counter-clockwise)
-        perp: (v) => ({ x: -v.y, y: v.x }),
-        // Reflect vector v across normal n
-        reflect: (v, normal) => {
-            const d = Vec.dot(v, normal);
-            return Vec.sub(v, Vec.scale(normal, 2 * d));
-        },
-        // Rotate vector v by angle (radians)
-        rotate: (v, angle) => {
-            const cosA = Math.cos(angle);
-            const sinA = Math.sin(angle);
-            return {
-                x: v.x * cosA - v.y * sinA,
-                y: v.x * sinA + v.y * cosA
-            };
-        }
-    };
+    // --- Vector Math Helper --- (No Changes)
+    const Vec = { create: (x = 0, y = 0) => ({ x, y }), add: (v1, v2) => ({ x: v1.x + v2.x, y: v1.y + v2.y }), sub: (v1, v2) => ({ x: v1.x - v2.x, y: v1.y - v2.y }), scale: (v, s) => ({ x: v.x * s, y: v.y * s }), dot: (v1, v2) => v1.x * v2.x + v1.y * v2.y, lenSq: (v) => v.x * v.x + v.y * v.y, len: (v) => Math.sqrt(Vec.lenSq(v)), normalize: (v) => { const l = Vec.len(v); return l === 0 ? Vec.create() : Vec.scale(v, 1 / l); }, perp: (v) => ({ x: -v.y, y: v.x }), reflect: (v, normal) => { const d = Vec.dot(v, normal); return Vec.sub(v, Vec.scale(normal, 2 * d)); }, rotate: (v, angle) => { const cosA = Math.cos(angle); const sinA = Math.sin(angle); return { x: v.x * cosA - v.y * sinA, y: v.x * sinA + v.y * cosA }; } };
 
-    // --- Utility Functions ---
-    const utils = {
-        resizeCanvas: () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            // Reload current level to recalculate absolute positions based on new center
-            levelManager.loadLevelData(gameState.currentLevelIndex);
-             // Ball position reset happens within loadLevelData -> resetBall
-            drawing.draw(); // Redraw immediately
-        },
+    // --- Utility Functions --- (No Changes)
+    const utils = { resizeCanvas: () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; levelManager.loadLevelData(gameState.currentLevelIndex); drawing.draw(); }, getRectVertices: (rect) => { const hw = rect.width / 2; const hh = rect.height / 2; const cx = rect.x + hw; const cy = rect.y + hh; const angle = rect.angle || 0; const cosA = Math.cos(angle); const sinA = Math.sin(angle); const corners = [ { x: -hw, y: -hh }, { x: hw, y: -hh }, { x: hw, y: hh }, { x: -hw, y: hh } ]; return corners.map(corner => ({ x: cx + (corner.x * cosA - corner.y * sinA), y: cy + (corner.x * sinA + corner.y * cosA) })); }, getRectAxes: (vertices) => { const axes = []; for (let i = 0; i < vertices.length; i++) { const p1 = vertices[i]; const p2 = vertices[(i + 1) % vertices.length]; const edge = Vec.sub(p2, p1); const normal = Vec.normalize(Vec.perp(edge)); if (!axes.some(ax => Math.abs(Vec.dot(ax, normal)) > 0.999)) { axes.push(normal); } } return axes; }, projectShapeOntoAxis: (vertices, axis) => { let min = Vec.dot(vertices[0], axis); let max = min; for (let i = 1; i < vertices.length; i++) { const p = Vec.dot(vertices[i], axis); if (p < min) min = p; else if (p > max) max = p; } return { min, max }; }, projectCircleOntoAxis: (circle, axis) => { const centerProj = Vec.dot(Vec.create(circle.x, circle.y), axis); return { min: centerProj - circle.radius, max: centerProj + circle.radius }; }, checkCircleRectCollision: (circle, rect) => { const rectVertices = utils.getRectVertices(rect); const circleCenter = Vec.create(circle.x, circle.y); const rectCenter = Vec.create(rect.x + rect.width / 2, rect.y + rect.height / 2); const axes = utils.getRectAxes(rectVertices); let closestVertex = rectVertices[0]; let minDistSq = Vec.lenSq(Vec.sub(circleCenter, closestVertex)); for (let i = 1; i < rectVertices.length; i++) { const distSq = Vec.lenSq(Vec.sub(circleCenter, rectVertices[i])); if (distSq < minDistSq) { minDistSq = distSq; closestVertex = rectVertices[i]; } } const axisToClosestVertex = Vec.normalize(Vec.sub(circleCenter, closestVertex)); if (Vec.lenSq(axisToClosestVertex) > 0.0001 && !axes.some(ax => Math.abs(Vec.dot(ax, axisToClosestVertex)) > 0.999)) { axes.push(axisToClosestVertex); } let minOverlap = Infinity; let mtvAxis = null; for (const axis of axes) { const rectProj = utils.projectShapeOntoAxis(rectVertices, axis); const circleProj = utils.projectCircleOntoAxis(circle, axis); const overlap = Math.min(rectProj.max, circleProj.max) - Math.max(rectProj.min, circleProj.min); if (overlap <= 0) { return { collision: false }; } if (overlap < minOverlap) { minOverlap = overlap; mtvAxis = axis; } } const centerDirection = Vec.sub(circleCenter, rectCenter); if (Vec.dot(mtvAxis, centerDirection) < 0) { mtvAxis = Vec.scale(mtvAxis, -1); } return { collision: true, normal: mtvAxis, overlap: minOverlap }; }, isPointInRotatedRect: (px, py, rect) => { const hw = rect.width / 2; const hh = rect.height / 2; const cx = rect.x + hw; const cy = rect.y + hh; const angle = -(rect.angle || 0); const cosA = Math.cos(angle); const sinA = Math.sin(angle); const dx = px - cx; const dy = py - cy; const localX = dx * cosA - dy * sinA; const localY = dx * sinA + dy * cosA; return Math.abs(localX) <= hw && Math.abs(localY) <= hh; }, getBrickHandles: (brick) => { const hw = brick.width / 2; const hh = brick.height / 2; const cx = brick.x + hw; const cy = brick.y + hh; const angle = brick.angle || 0; const cosA = Math.cos(angle); const sinA = Math.sin(angle); const rotatePoint = (relX, relY) => ({ x: cx + (relX * cosA - relY * sinA), y: cy + (relX * sinA + relY * cosA) }); return { tl: rotatePoint(-hw, -hh), tr: rotatePoint(hw, -hh), bl: rotatePoint(-hw, hh), br: rotatePoint(hw, hh), rotate: rotatePoint(0, -hh - ROTATE_HANDLE_OFFSET), center: { x: cx, y: cy } }; }, deepClone: (obj) => { try { return JSON.parse(JSON.stringify(obj)); } catch (e) { console.error("Deep clone failed:", e, obj); return null; } }, selectionsAreEqual: (selA, selB) => { if (selA.length !== selB.length) return false; const sortFn = (a, b) => (a.type + a.index).localeCompare(b.type + b.index); const sortedA = [...selA].sort(sortFn); const sortedB = [...selB].sort(sortFn); return sortedA.every((item, i) => item.type === sortedB[i].type && item.index === sortedB[i].index); }, getRectBoundingBox: (rect) => { const vertices = utils.getRectVertices(rect); let minX = vertices[0].x, maxX = vertices[0].x, minY = vertices[0].y, maxY = vertices[0].y; for (let i = 1; i < vertices.length; i++) { minX = Math.min(minX, vertices[i].x); maxX = Math.max(maxX, vertices[i].x); minY = Math.min(minY, vertices[i].y); maxY = Math.max(maxY, vertices[i].y); } return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }; }, doRectsOverlap: (rect1, rect2) => { return rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x && rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y; }, sanitizeFilename: (name) => { if (!name) return 'level'; return name.replace(/[^a-z0-9_\-\s.]/gi, '_').replace(/[\s_]+/g, '_'); }, statesAreEqual: (stateA, stateB) => { try { return JSON.stringify(stateA) === JSON.stringify(stateB); } catch (e) { console.error("State comparison failed:", e); return false; } } };
 
-        // Get vertices of a possibly rotated rectangle
-        getRectVertices: (rect) => {
-            const hw = rect.width / 2;
-            const hh = rect.height / 2;
-            // Calculate center based on current x, y (top-left)
-            const cx = rect.x + hw;
-            const cy = rect.y + hh;
-            const angle = rect.angle || 0;
-            const cosA = Math.cos(angle);
-            const sinA = Math.sin(angle);
+    // --- History / Undo-Redo Manager --- (No Changes)
+    const historyManager = { getCurrentStateSnapshot: () => { return { bricks: utils.deepClone(gameState.bricks), player: utils.deepClone(gameState.player), hole: utils.deepClone(gameState.hole), }; }, saveState: (forceSave = false) => { if (!forceSave && editorState.isNudging) return; editorState.isNudging = false; const currentState = historyManager.getCurrentStateSnapshot(); if (editorState.historyIndex >= 0 && utils.statesAreEqual(currentState, editorState.history[editorState.historyIndex])) { return; } editorState.history = editorState.history.slice(0, editorState.historyIndex + 1); editorState.history.push(currentState); editorState.historyIndex++; if (editorState.history.length > MAX_HISTORY) { editorState.history.shift(); editorState.historyIndex--; } }, loadStateFromHistory: (stateData) => { if (!stateData) return; gameState.bricks = utils.deepClone(stateData.bricks); gameState.player = utils.deepClone(stateData.player); gameState.hole = utils.deepClone(stateData.hole); if (gameState.ball.onPlayer) { gameLogic.resetBallPosition(); } }, undo: () => { if (gameState.mode !== 'editor' || editorState.historyIndex <= 0) return; editorState.historyIndex--; const stateToLoad = editorState.history[editorState.historyIndex]; historyManager.loadStateFromHistory(stateToLoad); editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, redo: () => { if (gameState.mode !== 'editor' || editorState.historyIndex >= editorState.history.length - 1) return; editorState.historyIndex++; const stateToLoad = editorState.history[editorState.historyIndex]; historyManager.loadStateFromHistory(stateToLoad); editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); } };
 
-            // Define corners relative to center
-            const corners = [
-                { x: -hw, y: -hh }, // Top-left
-                { x:  hw, y: -hh }, // Top-right
-                { x:  hw, y:  hh }, // Bottom-right
-                { x: -hw, y:  hh }  // Bottom-left
-            ];
+    // --- UI Manager --- (No Changes except updateBrickPropertiesUI added previously)
+    const uiManager = { messageTimeoutId: null, hideMenu: () => { menuDiv.classList.add('hidden'); showMenuButton.classList.remove('hidden'); }, showMenu: () => { menuDiv.classList.remove('hidden'); showMenuButton.classList.add('hidden'); }, showMessage: (text, duration = MESSAGE_DISPLAY_TIME) => { messageText.textContent = text; messageBox.style.display = 'block'; if (uiManager.messageTimeoutId) { clearTimeout(uiManager.messageTimeoutId); } if (duration > 0) { uiManager.messageTimeoutId = setTimeout(uiManager.hideMessage, duration); } }, hideMessage: () => { messageBox.style.display = 'none'; if (uiManager.messageTimeoutId) { clearTimeout(uiManager.messageTimeoutId); uiManager.messageTimeoutId = null; } }, updateUIForMode: () => { const isEditor = gameState.mode === 'editor'; editorControlsDiv.classList.toggle('hidden', !isEditor); saveButton.classList.toggle('hidden', !isEditor); editorButton.classList.toggle('bg-red-500', isEditor); editorButton.classList.toggle('hover:bg-red-600', isEditor); editorButton.classList.toggle('bg-green-500', !isEditor); editorButton.classList.toggle('hover:bg-green-600', !isEditor); playButton.classList.toggle('bg-red-500', !isEditor); playButton.classList.toggle('hover:bg-red-600', !isEditor); playButton.classList.toggle('bg-blue-500', isEditor); playButton.classList.toggle('hover:bg-blue-600', isEditor); uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y); uiManager.updateBrickPropertiesUI(); }, updateLevelDisplays: () => { const displayLevel = gameState.currentLevelIndex + 1; levelDisplay.textContent = displayLevel; editingLevelDisplay.textContent = displayLevel; }, showContextMenu: (x, y) => { contextMenuDiv.innerHTML = ''; const target = editorState.contextMenuTarget; if (target) { if (target.type === 'empty') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Brick', () => editor.addBrick('static'))); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Kill Brick', () => editor.addBrick('kill'))); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Vertical Mover', () => editor.addBrick('vertical'))); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Horizontal Mover', () => editor.addBrick('horizontal'))); if (editorState.clipboard.length > 0) { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Paste', editor.handlePaste)); } } else if (target.type === 'brick' && target.index !== undefined) { const index = target.index; const brick = gameState.bricks[index]; if (!brick) return; const toggleKillText = brick.isKillBrick ? 'Make Normal Brick' : 'Make Kill Brick'; contextMenuDiv.appendChild(uiManager.createContextMenuButton(toggleKillText, () => editor.toggleKillBrick(index))); contextMenuDiv.appendChild(document.createElement('hr')); if (brick.movementType !== 'vertical') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Vertical Mover', () => editor.setMovementType(index, 'vertical'))); } if (brick.movementType !== 'horizontal') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Horizontal Mover', () => editor.setMovementType(index, 'horizontal'))); } if (brick.movementType !== null) { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Static', () => editor.setMovementType(index, null))); } contextMenuDiv.appendChild(document.createElement('hr')); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Copy', editor.handleCopy)); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Delete Brick', () => editor.deleteSingleBrick(index))); } } contextMenuDiv.style.left = `${x}px`; contextMenuDiv.style.top = `${y}px`; contextMenuDiv.style.display = 'block'; }, hideContextMenu: () => { contextMenuDiv.style.display = 'none'; editorState.contextMenuTarget = null; }, createContextMenuButton: (text, onClickAction) => { const button = document.createElement('button'); button.textContent = text; button.onclick = () => { onClickAction(); uiManager.hideContextMenu(); }; return button; }, createLevelControlButton: (html, title, onClickAction, disabled = false) => { const button = document.createElement('button'); button.innerHTML = html; button.title = title; button.disabled = disabled; button.onclick = (e) => { e.stopPropagation(); onClickAction(); }; return button; }, updateCursorStyle: (mx, my) => { if (gameState.mode !== 'editor' || uiManager.isPointerOverUI(mx, my)) { canvas.style.cursor = 'default'; return; } let cursorSet = false; if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') { const brick = gameState.bricks[editorState.selectedItems[0].index]; if (brick) { const handles = utils.getBrickHandles(brick); if (Math.hypot(mx - handles.rotate.x, my - handles.rotate.y) <= HANDLE_SIZE * 1.5) { canvas.style.cursor = 'grab'; cursorSet = true; } else { for (const type of ['tl', 'tr', 'bl', 'br']) { if (Math.hypot(mx - handles[type].x, my - handles[type].y) <= HANDLE_SIZE * 1.2) { canvas.style.cursor = (type === 'tl' || type === 'br') ? 'nwse-resize' : 'nesw-resize'; cursorSet = true; break; } } } } } if (!cursorSet && editorState.selectedItems.length > 0) { const isOverSelection = editor.isPointOverSelection(mx, my); if (isOverSelection) { canvas.style.cursor = 'move'; cursorSet = true; } } if (!cursorSet) { const isOverAnyItem = editor.getItemAtPoint(mx, my) !== null; if (isOverAnyItem) { canvas.style.cursor = 'pointer'; cursorSet = true; } } if (!cursorSet) { canvas.style.cursor = 'default'; } }, isPointerOverUI: (px, py) => { if (!menuDiv.classList.contains('hidden')) { const menuRect = menuDiv.getBoundingClientRect(); if (px >= menuRect.left && px <= menuRect.right && py >= menuRect.top && py <= menuRect.bottom) { return true; } } if (!showMenuButton.classList.contains('hidden')) { const buttonRect = showMenuButton.getBoundingClientRect(); if (px >= buttonRect.left && px <= buttonRect.right && py >= buttonRect.top && py <= buttonRect.bottom) { return true; } } return false; }, updateMarqueeBox: () => { if (editorState.isMarqueeSelecting) { const x = Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x); const y = Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y); const width = Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x); const height = Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y); marqueeBox.style.left = `${x}px`; marqueeBox.style.top = `${y}px`; marqueeBox.style.width = `${width}px`; marqueeBox.style.height = `${height}px`; marqueeBox.style.display = 'block'; } else { marqueeBox.style.display = 'none'; } }, updateBrickPropertiesUI: () => { if (editorState.isUpdatingPropertiesFromInput) return; if (gameState.mode === 'editor' && editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') { const brick = gameState.bricks[editorState.selectedItems[0].index]; if (brick) { brickPropertiesDiv.classList.remove('hidden'); const isMover = brick.movementType === 'vertical' || brick.movementType === 'horizontal'; propMoveRangeInput.disabled = !isMover; propMoveSpeedInput.disabled = !isMover; propMoveRangeInput.value = isMover ? (brick.moveRange ?? DEFAULT_MOVE_RANGE) : ''; propMoveSpeedInput.value = isMover ? (brick.moveSpeed ?? DEFAULT_MOVE_SPEED) : ''; propMoveRangeInput.placeholder = isMover ? '' : 'N/A (Static)'; propMoveSpeedInput.placeholder = isMover ? '' : 'N/A (Static)'; return; } } brickPropertiesDiv.classList.add('hidden'); } };
 
-            // Rotate and translate corners
-            return corners.map(corner => ({
-                x: cx + (corner.x * cosA - corner.y * sinA),
-                y: cy + (corner.x * sinA + corner.y * cosA)
-            }));
-        },
+    // --- Game Logic --- (No Changes)
+    const gameLogic = { update: () => { if (gameState.mode === 'play') { const time = Date.now() * 0.001; gameState.bricks.forEach(brick => { if (brick.movementType && brick.initialX !== undefined && brick.initialY !== undefined) { const speed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED; const range = brick.moveRange ?? DEFAULT_MOVE_RANGE; const offset = range * Math.sin(time * speed); if (brick.movementType === 'vertical') { brick.y = brick.initialY + offset; } else if (brick.movementType === 'horizontal') { brick.x = brick.initialX + offset; } } }); } if (gameState.mode === 'editor') return; if (gameState.ball.fired) { gameState.ball.x += gameState.ball.vx; gameState.ball.y += gameState.ball.vy; if (gameState.ball.x - gameState.ball.radius < 0) { gameLogic.restartLevelAttempt("Hit left edge!"); return; } if (gameState.ball.x + gameState.ball.radius > canvas.width) { gameLogic.restartLevelAttempt("Hit right edge!"); return; } if (gameState.ball.y - gameState.ball.radius < 0) { gameLogic.restartLevelAttempt("Hit top edge!"); return; } if (gameState.ball.y > canvas.height + gameState.ball.radius * 2) { gameLogic.restartLevelAttempt("Fell off bottom!"); return; } for (const brick of gameState.bricks) { const collision = utils.checkCircleRectCollision(gameState.ball, brick); if (collision.collision) { if (brick.isKillBrick) { gameLogic.restartLevelAttempt("Hit a kill brick!"); return; } const pushVector = Vec.scale(collision.normal, collision.overlap * COLLISION_PUSH_FACTOR); gameState.ball.x += pushVector.x; gameState.ball.y += pushVector.y; const velocity = Vec.create(gameState.ball.vx, gameState.ball.vy); const reflectedVel = Vec.reflect(velocity, collision.normal); gameState.ball.vx = reflectedVel.x; gameState.ball.vy = reflectedVel.y; } } const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height }; const ballRect = { x: gameState.ball.x - gameState.ball.radius, y: gameState.ball.y - gameState.ball.radius, width: gameState.ball.radius * 2, height: gameState.ball.radius * 2 }; if (!gameState.ball.onPlayer && utils.doRectsOverlap(ballRect, playerRect)) { gameLogic.restartLevelAttempt("Ball hit player!"); return; } const distToHole = Math.hypot(gameState.ball.x - gameState.hole.x, gameState.ball.y - gameState.hole.y); if (distToHole < gameState.ball.radius + gameState.hole.radius) { uiManager.showMessage(`Level ${gameState.currentLevelIndex + 1} Complete!`); const nextLevelIndex = gameState.currentLevelIndex + 1; if (nextLevelIndex < levelManager.levels.length) { levelManager.selectLevelToEdit(nextLevelIndex); gameLogic.startGame(); } else { uiManager.showMessage("Congratulations! You beat all levels!", 0); gameLogic.switchToEditorMode(); } return; } } else if (gameState.ball.onPlayer) { gameLogic.resetBallPosition(); } }, resetBall: () => { gameState.ball.fired = false; gameState.ball.onPlayer = true; gameState.ball.vx = 0; gameState.ball.vy = 0; editorState.aim.active = false; editorState.aim.dx = 0; editorState.aim.dy = 0; gameLogic.resetBallPosition(); }, resetBallPosition: () => { gameState.ball.x = gameState.player.x + gameState.player.width / 2; gameState.ball.y = gameState.player.y - gameState.ball.radius - 2; }, fireBall: () => { if (!gameState.ball.onPlayer || gameState.mode === 'editor' || !editorState.aim.active) return; if (Math.abs(editorState.aim.dx) < 0.01 && Math.abs(editorState.aim.dy) < 0.01) return; gameState.ball.fired = true; gameState.ball.onPlayer = false; gameState.ball.vx = editorState.aim.dx; gameState.ball.vy = editorState.aim.dy; editorState.aim.active = false; editorState.aim.dx = 0; editorState.aim.dy = 0; }, restartLevelAttempt: (reason = "Hazard hit!") => { uiManager.showMessage(`${reason} Restarting level.`, MESSAGE_DISPLAY_TIME); gameLogic.resetBall(); drawing.draw(); }, startGame: () => { gameState.mode = 'play'; editorState.aim.active = false; uiManager.hideContextMenu(); uiManager.hideMessage(); editor.resetSelectionAndDragging(); levelManager.loadLevelData(gameState.currentLevelIndex); uiManager.updateUIForMode(); drawing.draw(); }, switchToEditorMode: () => { gameState.mode = 'editor'; editorState.aim.active = false; uiManager.hideContextMenu(); levelManager.loadLevelData(gameState.currentLevelIndex); uiManager.updateUIForMode(); drawing.draw(); } };
 
-        // Get unique axes (normals) of a rectangle's edges
-        getRectAxes: (vertices) => {
-            const axes = [];
-            for (let i = 0; i < vertices.length; i++) {
-                const p1 = vertices[i];
-                const p2 = vertices[(i + 1) % vertices.length]; // Wrap around
-                const edge = Vec.sub(p2, p1);
-                // Get perpendicular vector (normal) and normalize it
-                const normal = Vec.normalize(Vec.perp(edge));
-                // Avoid adding duplicate axes (e.g., parallel edges)
-                // Check if an axis with nearly the same or opposite direction already exists
-                 if (!axes.some(ax => Math.abs(Vec.dot(ax, normal)) > 0.999)) {
-                    axes.push(normal);
-                }
-            }
-            return axes;
-        },
+    // --- Drawing Functions --- (No Changes except drawEditorOverlays added previously)
+    const drawing = { draw: () => { ctx.fillStyle = "#f0f8ff"; ctx.fillRect(0, 0, canvas.width, canvas.height); drawing.drawHole(); gameState.bricks.forEach((brick, index) => { drawing.drawBrick(brick, index); }); drawing.drawPlayer(); drawing.drawBall(); if (gameState.mode === 'play' && editorState.aim.active && gameState.ball.onPlayer) { drawing.drawAimLine(); } if (gameState.mode === 'editor') { drawing.drawEditorOverlays(); } }, drawHole: () => { const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'hole'); ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(gameState.hole.x, gameState.hole.y, gameState.hole.radius, 0, Math.PI * 2); ctx.fill(); if (isSelected) { ctx.strokeStyle = SELECTED_ITEM_OUTLINE_COLOR; ctx.lineWidth = 2; ctx.stroke(); } }, drawBrick: (brick, index) => { const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'brick' && item.index === index); ctx.save(); const centerX = brick.x + brick.width / 2; const centerY = brick.y + brick.height / 2; ctx.translate(centerX, centerY); ctx.rotate(brick.angle || 0); ctx.translate(-centerX, -centerY); let fillColor = BRICK_COLOR; if (brick.isKillBrick) { fillColor = KILL_BRICK_COLOR; } else if (brick.movementType === 'vertical') { fillColor = VERTICAL_MOVER_COLOR; } else if (brick.movementType === 'horizontal') { fillColor = HORIZONTAL_MOVER_COLOR; } if (isSelected) { fillColor = SELECTED_BRICK_COLOR; } ctx.fillStyle = fillColor; ctx.strokeStyle = BRICK_STROKE_COLOR; ctx.lineWidth = 1; ctx.fillRect(brick.x, brick.y, brick.width, brick.height); ctx.strokeRect(brick.x, brick.y, brick.width, brick.height); ctx.restore(); }, drawPlayer: () => { const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'player'); const player = gameState.player; ctx.fillStyle = "#4CAF50"; ctx.fillRect(player.x, player.y, player.width, player.height); const headX = player.x + player.width / 2; const headY = player.y - PLAYER_HEAD_RADIUS; ctx.fillStyle = "#8BC34A"; ctx.beginPath(); ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2); ctx.fill(); if (isSelected) { ctx.strokeStyle = SELECTED_ITEM_OUTLINE_COLOR; ctx.lineWidth = 2; ctx.strokeRect(player.x, player.y, player.width, player.height); ctx.beginPath(); ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2); ctx.stroke(); } }, drawBall: () => { ctx.save(); ctx.fillStyle = "white"; ctx.strokeStyle = "black"; ctx.lineWidth = BALL_OUTLINE_WIDTH; ctx.beginPath(); ctx.arc(gameState.ball.x, gameState.ball.y, gameState.ball.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore(); }, drawAimLine: () => { ctx.beginPath(); ctx.moveTo(gameState.ball.x, gameState.ball.y); const potentialVx = editorState.aim.dx; const potentialVy = editorState.aim.dy; const endX = gameState.ball.x + potentialVx * AIM_VISUAL_SCALE; const endY = gameState.ball.y + potentialVy * AIM_VISUAL_SCALE; ctx.lineTo(endX, endY); ctx.strokeStyle = "rgba(255, 0, 0, 0.7)"; ctx.lineWidth = 2; ctx.setLineDash([5, 3]); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(endX, endY, 3, 0, Math.PI * 2); ctx.fillStyle = "rgba(255, 0, 0, 0.7)"; ctx.fill(); }, drawEditorOverlays: () => { if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') { const brick = gameState.bricks[editorState.selectedItems[0].index]; if (brick) { if (brick.movementType === 'vertical' || brick.movementType === 'horizontal') { drawing.drawMovementRange(brick); } drawing.drawHandles(brick); } } }, drawMovementRange: (brick) => { const range = brick.moveRange ?? DEFAULT_MOVE_RANGE; const initialCenterX = (brick.initialX ?? brick.x) + brick.width / 2; const initialCenterY = (brick.initialY ?? brick.y) + brick.height / 2; ctx.save(); ctx.strokeStyle = MOVER_RANGE_INDICATOR_COLOR; ctx.lineWidth = MOVER_RANGE_INDICATOR_WIDTH; ctx.setLineDash([4, 4]); ctx.beginPath(); if (brick.movementType === 'vertical') { const y1 = initialCenterY - range; const y2 = initialCenterY + range; ctx.moveTo(initialCenterX, y1); ctx.lineTo(initialCenterX, y2); ctx.moveTo(initialCenterX - 5, y1); ctx.lineTo(initialCenterX + 5, y1); ctx.moveTo(initialCenterX - 5, y2); ctx.lineTo(initialCenterX + 5, y2); } else { const x1 = initialCenterX - range; const x2 = initialCenterX + range; ctx.moveTo(x1, initialCenterY); ctx.lineTo(x2, initialCenterY); ctx.moveTo(x1, initialCenterY - 5); ctx.lineTo(x1, initialCenterY + 5); ctx.moveTo(x2, initialCenterY - 5); ctx.lineTo(x2, initialCenterY + 5); } ctx.stroke(); ctx.restore(); }, drawHandles: (brick) => { const handles = utils.getBrickHandles(brick); ctx.fillStyle = HANDLE_COLOR; for (const type of ['tl', 'tr', 'bl', 'br']) { ctx.beginPath(); ctx.arc(handles[type].x, handles[type].y, HANDLE_SIZE, 0, Math.PI * 2); ctx.fill(); } ctx.beginPath(); ctx.arc(handles.rotate.x, handles.rotate.y, HANDLE_SIZE * ROTATE_HANDLE_SIZE_FACTOR, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.moveTo(handles.center.x, handles.center.y); ctx.lineTo(handles.rotate.x, handles.rotate.y); ctx.strokeStyle = HANDLE_COLOR; ctx.lineWidth = 1; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]); } };
 
-        // Project polygon vertices onto an axis
-        projectShapeOntoAxis: (vertices, axis) => {
-            let min = Vec.dot(vertices[0], axis);
-            let max = min;
-            for (let i = 1; i < vertices.length; i++) {
-                const p = Vec.dot(vertices[i], axis);
-                if (p < min) min = p;
-                else if (p > max) max = p;
-            }
-            return { min, max };
-        },
+    // --- Editor Logic --- (No Changes except handlePropertyChange added previously)
+    const editor = { resetSelectionAndHistory: () => { editorState.selectedItems = []; editor.resetSelectionAndDragging(); editorState.history = []; editorState.historyIndex = -1; uiManager.updateBrickPropertiesUI(); }, resetSelectionAndDragging: () => { editorState.draggingHandle = null; editorState.isDraggingSelection = false; editorState.isMarqueeSelecting = false; editorState.originalItemStates = []; uiManager.updateMarqueeBox(); uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y); }, addBrick: (type = 'static') => { if (gameState.mode !== 'editor' || !editorState.contextMenuTarget || editorState.contextMenuTarget.type !== 'empty') return; historyManager.saveState(); const x = editorState.contextMenuTarget.x || editorState.mouse.x; const y = editorState.contextMenuTarget.y || editorState.mouse.y; const width = 100; const height = 20; const initialX = x - width / 2; const initialY = y - height / 2; const newBrick = { x: initialX, y: initialY, width: width, height: height, angle: 0, isKillBrick: type === 'kill', movementType: (type === 'vertical' || type === 'horizontal') ? type : null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED, initialX: initialX, initialY: initialY }; gameState.bricks.push(newBrick); editorState.selectedItems = [{ type: 'brick', index: gameState.bricks.length - 1 }]; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, toggleKillBrick: (index) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); const brick = gameState.bricks[index]; brick.isKillBrick = !brick.isKillBrick; editor.ensureItemSelected({ type: 'brick', index: index }); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, setMovementType: (index, type) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); const brick = gameState.bricks[index]; if (type === null) { brick.movementType = null; if (brick.initialX !== undefined) brick.x = brick.initialX; if (brick.initialY !== undefined) brick.y = brick.initialY; } else { if (brick.movementType !== type || brick.initialX === undefined || brick.initialY === undefined) { brick.initialX = brick.x; brick.initialY = brick.y; } brick.movementType = type; brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE; brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED; } editor.ensureItemSelected({ type: 'brick', index: index }); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, deleteSingleBrick: (index) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); gameState.bricks.splice(index, 1); editorState.selectedItems = editorState.selectedItems .filter(item => !(item.type === 'brick' && item.index === index)) .map(item => { if (item.type === 'brick' && item.index > index) { item.index--; } return item; }); editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, deleteSelectedItems: () => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return; historyManager.saveState(); const brickIndicesToDelete = editorState.selectedItems .filter(item => item.type === 'brick') .map(item => item.index) .sort((a, b) => b - a); const deletedPlayer = editorState.selectedItems.some(item => item.type === 'player'); const deletedHole = editorState.selectedItems.some(item => item.type === 'hole'); brickIndicesToDelete.forEach(index => { if (index >= 0 && index < gameState.bricks.length) { gameState.bricks.splice(index, 1); } else { console.warn("Attempted to delete invalid brick index:", index); } }); if (deletedPlayer || deletedHole) { uiManager.showMessage("Player and Hole cannot be deleted.", 1500); } editorState.selectedItems = []; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, handleCopy: () => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return; editorState.clipboard = []; editorState.selectedItems.forEach(item => { if (item.type === 'brick') { editorState.clipboard.push(utils.deepClone(gameState.bricks[item.index])); } }); uiManager.showMessage(`Copied ${editorState.clipboard.length} brick(s).`, 1000); }, handlePaste: () => { if (gameState.mode !== 'editor' || editorState.clipboard.length === 0) return; historyManager.saveState(); const newSelection = []; editorState.clipboard.forEach(itemData => { if (itemData) { const newItem = utils.deepClone(itemData); newItem.x += PASTE_OFFSET; newItem.y += PASTE_OFFSET; newItem.initialX = (newItem.initialX !== undefined ? newItem.initialX : newItem.x - PASTE_OFFSET) + PASTE_OFFSET; newItem.initialY = (newItem.initialY !== undefined ? newItem.initialY : newItem.y - PASTE_OFFSET) + PASTE_OFFSET; gameState.bricks.push(newItem); newSelection.push({ type: 'brick', index: gameState.bricks.length - 1 }); } }); editorState.selectedItems = newSelection; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, handleNudge: (dx, dy) => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0 || (dx === 0 && dy === 0)) return; if (!editorState.isNudging) { historyManager.saveState(); editorState.isNudging = true; } editorState.selectedItems.forEach(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; brick.x += dx; brick.y += dy; brick.initialX += dx; brick.initialY += dy; } else if (item.type === 'player') { gameState.player.x += dx; gameState.player.y += dy; if (gameState.ball.onPlayer) gameLogic.resetBallPosition(); } else if (item.type === 'hole') { gameState.hole.x += dx; gameState.hole.y += dy; } }); drawing.draw(); }, selectItem: (itemToSelect, ctrlPressed) => { if (!itemToSelect) return; const alreadySelected = editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index); if (ctrlPressed) { if (alreadySelected) { editorState.selectedItems = editorState.selectedItems.filter(sel => !(sel.type === itemToSelect.type && sel.index === itemToSelect.index)); } else { editorState.selectedItems.push(itemToSelect); } } else { if (!alreadySelected) { editorState.selectedItems = [itemToSelect]; } } uiManager.updateBrickPropertiesUI(); }, ensureItemSelected: (itemToSelect) => { if (!editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index)) { editorState.selectedItems.push(itemToSelect); uiManager.updateBrickPropertiesUI(); } }, getItemAtPoint: (px, py) => { for (let i = gameState.bricks.length - 1; i >= 0; i--) { if (utils.isPointInRotatedRect(px, py, gameState.bricks[i])) { return { type: 'brick', index: i }; } } const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height }; const headCenter = { x: gameState.player.x + gameState.player.width / 2, y: gameState.player.y - PLAYER_HEAD_RADIUS }; if ((Math.hypot(px - headCenter.x, py - headCenter.y) <= PLAYER_HEAD_RADIUS) || (px >= playerRect.x && px <= playerRect.x + playerRect.width && py >= playerRect.y && py <= playerRect.y + playerRect.height)) { return { type: 'player', index: null }; } if (Math.hypot(px - gameState.hole.x, py - gameState.hole.y) <= gameState.hole.radius) { return { type: 'hole', index: null }; } return null; }, isPointOverSelection: (px, py) => { return editorState.selectedItems.some(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick && utils.isPointInRotatedRect(px, py, brick); } else if (item.type === 'player') { const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height }; const headCenter = { x: gameState.player.x + gameState.player.width / 2, y: gameState.player.y - PLAYER_HEAD_RADIUS }; return (Math.hypot(px - headCenter.x, py - headCenter.y) <= PLAYER_HEAD_RADIUS) || (px >= playerRect.x && px <= playerRect.x + playerRect.width && py >= playerRect.y && py <= playerRect.y + playerRect.height); } else if (item.type === 'hole') { return Math.hypot(px - gameState.hole.x, py - gameState.hole.y) <= gameState.hole.radius; } return false; }); }, getHandleAtPoint: (px, py) => { if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return null; } const brick = gameState.bricks[editorState.selectedItems[0].index]; if (!brick) return null; const handles = utils.getBrickHandles(brick); if (Math.hypot(px - handles.rotate.x, py - handles.rotate.y) <= HANDLE_SIZE * 1.5) { return { type: 'rotate', itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; } for (const type of ['tl', 'tr', 'bl', 'br']) { if (Math.hypot(px - handles[type].x, py - handles[type].y) <= HANDLE_SIZE * 1.2) { return { type: type, itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; } } return null; }, finalizeMarqueeSelection: (ctrlPressed) => { const marqueeRect = { x: Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x), y: Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y), width: Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x), height: Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y) }; if (marqueeRect.width < 5 && marqueeRect.height < 5) { if (!ctrlPressed) { editorState.selectedItems = []; } uiManager.updateBrickPropertiesUI(); return; } const newlySelected = []; gameState.bricks.forEach((brick, index) => { const brickBounds = utils.getRectBoundingBox(brick); if (utils.doRectsOverlap(marqueeRect, brickBounds)) { newlySelected.push({ type: 'brick', index: index }); } }); const playerBounds = { x: gameState.player.x, y: gameState.player.y - PLAYER_HEAD_RADIUS * 2, width: gameState.player.width, height: gameState.player.height + PLAYER_HEAD_RADIUS * 2 }; if (utils.doRectsOverlap(marqueeRect, playerBounds)) { newlySelected.push({ type: 'player', index: null }); } const holeBounds = { x: gameState.hole.x - gameState.hole.radius, y: gameState.hole.y - gameState.hole.radius, width: gameState.hole.radius * 2, height: gameState.hole.radius * 2 }; if (utils.doRectsOverlap(marqueeRect, holeBounds)) { newlySelected.push({ type: 'hole', index: null }); } if (ctrlPressed) { newlySelected.forEach(newItem => { if (!editorState.selectedItems.some(sel => sel.type === newItem.type && sel.index === newItem.index)) { editorState.selectedItems.push(newItem); } }); } else { editorState.selectedItems = newlySelected; } uiManager.updateBrickPropertiesUI(); }, updateItemsDuringDrag: (dx, dy) => { editorState.selectedItems.forEach((item, i) => { const origState = editorState.originalItemStates[i]; if (!origState) return; if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (!brick) return; brick.x = origState.x + dx; brick.y = origState.y + dy; } else if (item.type === 'player') { gameState.player.x = origState.x + dx; gameState.player.y = origState.y + dy; if (gameState.ball.onPlayer) gameLogic.resetBallPosition(); } else if (item.type === 'hole') { gameState.hole.x = origState.x + dx; gameState.hole.y = origState.y + dy; } }); }, updateBrickDuringResize: (handleType, currentMouseX, currentMouseY) => { if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return; const brickIndex = editorState.draggingHandle.itemRef.index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const origState = editorState.draggingHandle.startBrickState; const origAngle = origState.angle || 0; const cosA = Math.cos(-origAngle); const sinA = Math.sin(-origAngle); const ocx = origState.x + origState.width / 2; const ocy = origState.y + origState.height / 2; const dxWorld = currentMouseX - ocx; const dyWorld = currentMouseY - ocy; const localMx = dxWorld * cosA - dyWorld * sinA; const localMy = dxWorld * sinA + dyWorld * cosA; let newHalfWidth, newHalfHeight; switch (handleType) { case 'br': newHalfWidth = localMx; newHalfHeight = localMy; break; case 'bl': newHalfWidth = -localMx; newHalfHeight = localMy; break; case 'tr': newHalfWidth = localMx; newHalfHeight = -localMy; break; case 'tl': newHalfWidth = -localMx; newHalfHeight = -localMy; break; default: return; } newHalfWidth = Math.max(MIN_BRICK_DIMENSION / 2, newHalfWidth); newHalfHeight = Math.max(MIN_BRICK_DIMENSION / 2, newHalfHeight); const newWidth = 2 * newHalfWidth; const newHeight = 2 * newHalfHeight; const centerShiftXLocal = (newWidth - origState.width) / 2; const centerShiftYLocal = (newHeight - origState.height) / 2; let shiftFactorX = 0, shiftFactorY = 0; switch(handleType) { case 'tl': shiftFactorX = -1; shiftFactorY = -1; break; case 'tr': shiftFactorX = 1; shiftFactorY = -1; break; case 'bl': shiftFactorX = -1; shiftFactorY = 1; break; case 'br': shiftFactorX = 1; shiftFactorY = 1; break; } const finalShiftLocalX = centerShiftXLocal * shiftFactorX; const finalShiftLocalY = centerShiftYLocal * shiftFactorY; const cosARot = Math.cos(origAngle); const sinARot = Math.sin(origAngle); const centerShiftWorldX = finalShiftLocalX * cosARot - finalShiftLocalY * sinARot; const centerShiftWorldY = finalShiftLocalX * sinARot + finalShiftLocalY * cosARot; const newCx = ocx + centerShiftWorldX; const newCy = ocy + centerShiftWorldY; brick.width = newWidth; brick.height = newHeight; brick.angle = origAngle; const localTLX = -newWidth / 2; const localTLY = -newHeight / 2; brick.x = newCx + (localTLX * cosARot - localTLY * sinARot); brick.y = newCy + (localTLX * sinARot + localTLY * cosARot); }, updateBrickDuringRotate: (currentMouseX, currentMouseY) => { if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return; const brickIndex = editorState.draggingHandle.itemRef.index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const origState = editorState.draggingHandle.startBrickState; const center = utils.getBrickHandles(origState).center; const currentAngle = Math.atan2(currentMouseY - center.y, currentMouseX - center.x); const startAngle = Math.atan2(editorState.dragStart.y - center.y, editorState.dragStart.x - center.x); brick.angle = origState.angle + (currentAngle - startAngle); }, finalizeItemManipulation: () => { if (editorState.draggingHandle || editorState.isDraggingSelection) { editorState.selectedItems.forEach(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (!brick) return; brick.initialX = brick.x; brick.initialY = brick.y; } }); const previousState = editorState.history[editorState.historyIndex]; const currentState = historyManager.getCurrentStateSnapshot(); if (previousState && utils.statesAreEqual(previousState, currentState)) { editorState.history.pop(); editorState.historyIndex--; } else { if (editorState.historyIndex >= 0 && editorState.history.length > editorState.historyIndex) { editorState.history[editorState.historyIndex] = currentState; } else { console.warn("History index issue during finalization."); historyManager.saveState(true); } } } }, handlePropertyChange: (event) => { if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return; } const brickIndex = editorState.selectedItems[0].index; if (brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const propertyName = event.target.name; const value = parseFloat(event.target.value); if (isNaN(value) || value < 0) { console.warn(`Invalid value entered for ${propertyName}:`, event.target.value); event.target.value = brick[propertyName] ?? (propertyName === 'moveRange' ? DEFAULT_MOVE_RANGE : DEFAULT_MOVE_SPEED); return; } if (brick[propertyName] === value) { return; } historyManager.saveState(); brick[propertyName] = value; editorState.isUpdatingPropertiesFromInput = true; drawing.draw(); editorState.isUpdatingPropertiesFromInput = false; } };
 
-        // Project a circle onto an axis
-        projectCircleOntoAxis: (circle, axis) => {
-            // Project the center point
-            const centerProj = Vec.dot(Vec.create(circle.x, circle.y), axis);
-            // The projection is the center projection +/- radius
-            return { min: centerProj - circle.radius, max: centerProj + circle.radius };
-        },
-
-        // Check collision between a circle and a rotated rectangle using SAT
-        checkCircleRectCollision: (circle, rect) => {
-            const rectVertices = utils.getRectVertices(rect);
-            const circleCenter = Vec.create(circle.x, circle.y);
-            // Calculate rect center AFTER getting vertices based on rect.x/y
-            const rectCenter = Vec.create(rect.x + rect.width / 2, rect.y + rect.height / 2);
-
-            // 1. Get axes from rectangle edges
-            const axes = utils.getRectAxes(rectVertices);
-
-            // 2. Find closest vertex on rectangle to circle center
-            let closestVertex = rectVertices[0];
-            let minDistSq = Vec.lenSq(Vec.sub(circleCenter, closestVertex));
-            for (let i = 1; i < rectVertices.length; i++) {
-                const distSq = Vec.lenSq(Vec.sub(circleCenter, rectVertices[i]));
-                if (distSq < minDistSq) {
-                    minDistSq = distSq;
-                    closestVertex = rectVertices[i];
-                }
-            }
-
-             // 3. Add axis from circle center to closest rectangle vertex
-            const axisToClosestVertex = Vec.normalize(Vec.sub(circleCenter, closestVertex));
-             // Check if this axis is valid and not parallel to existing axes
-             if (Vec.lenSq(axisToClosestVertex) > 0.0001 && !axes.some(ax => Math.abs(Vec.dot(ax, axisToClosestVertex)) > 0.999)) {
-                axes.push(axisToClosestVertex);
-            }
-
-
-            let minOverlap = Infinity;
-            let mtvAxis = null; // Minimum Translation Vector Axis
-
-            // 4. Project circle and rectangle onto each axis
-            for (const axis of axes) {
-                const rectProj = utils.projectShapeOntoAxis(rectVertices, axis);
-                const circleProj = utils.projectCircleOntoAxis(circle, axis);
-
-                // Check for separation
-                const overlap = Math.min(rectProj.max, circleProj.max) - Math.max(rectProj.min, circleProj.min);
-                if (overlap <= 0) {
-                    // Found a separating axis, no collision
-                    return { collision: false };
-                }
-
-                // Track minimum overlap
-                if (overlap < minOverlap) {
-                    minOverlap = overlap;
-                    mtvAxis = axis;
-                }
-            }
-
-            // If we got here, no separating axis was found -> collision
-            // Ensure MTV pushes circle away from rect center
-            const centerDirection = Vec.sub(circleCenter, rectCenter);
-            if (Vec.dot(mtvAxis, centerDirection) < 0) {
-                // Flip MTV axis if it points towards the rectangle center
-                mtvAxis = Vec.scale(mtvAxis, -1);
-            }
-
-            return {
-                collision: true,
-                normal: mtvAxis, // The axis along which to push the circle out
-                overlap: minOverlap // The amount to push
-            };
-        },
-
-        // Check if a point (px, py) is inside a rotated rectangle
-        isPointInRotatedRect: (px, py, rect) => {
-            const hw = rect.width / 2;
-            const hh = rect.height / 2;
-            const cx = rect.x + hw;
-            const cy = rect.y + hh;
-            const angle = -(rect.angle || 0); // Reverse rotation
-            const cosA = Math.cos(angle);
-            const sinA = Math.sin(angle);
-
-            // Translate point relative to rectangle center
-            const dx = px - cx;
-            const dy = py - cy;
-
-            // Rotate point back
-            const localX = dx * cosA - dy * sinA;
-            const localY = dx * sinA + dy * cosA;
-
-            // Check if rotated point is within axis-aligned bounds
-            return Math.abs(localX) <= hw && Math.abs(localY) <= hh;
-        },
-
-        // Get positions of resize/rotate handles for a brick
-        getBrickHandles: (brick) => {
-            const hw = brick.width / 2;
-            const hh = brick.height / 2;
-            const cx = brick.x + hw;
-            const cy = brick.y + hh;
-            const angle = brick.angle || 0;
-            const cosA = Math.cos(angle);
-            const sinA = Math.sin(angle);
-
-            // Helper to rotate a point relative to the center
-            const rotatePoint = (relX, relY) => ({
-                x: cx + (relX * cosA - relY * sinA),
-                y: cy + (relX * sinA + relY * cosA)
-            });
-
-            return {
-                tl: rotatePoint(-hw, -hh), // Top-left handle
-                tr: rotatePoint( hw, -hh), // Top-right handle
-                bl: rotatePoint(-hw,  hh), // Bottom-left handle
-                br: rotatePoint( hw,  hh), // Bottom-right handle
-                rotate: rotatePoint(0, -hh - ROTATE_HANDLE_OFFSET), // Rotate handle (above top edge)
-                center: { x: cx, y: cy } // Center point
-            };
-        },
-
-        // Simple deep clone using JSON (works for level data)
-        deepClone: (obj) => {
-            try {
-                return JSON.parse(JSON.stringify(obj));
-            } catch (e) {
-                console.error("Deep clone failed:", e, obj);
-                return null; // Or handle error appropriately
-            }
-        },
-
-        // Check if two selection arrays are identical
-        selectionsAreEqual: (selA, selB) => {
-            if (selA.length !== selB.length) return false;
-            // Sort both arrays consistently to compare element by element
-            const sortFn = (a, b) => (a.type + a.index).localeCompare(b.type + b.index);
-            const sortedA = [...selA].sort(sortFn);
-            const sortedB = [...selB].sort(sortFn);
-            return sortedA.every((item, i) => item.type === sortedB[i].type && item.index === sortedB[i].index);
-        },
-
-        // Get the axis-aligned bounding box of a potentially rotated rectangle
-        getRectBoundingBox: (rect) => {
-            const vertices = utils.getRectVertices(rect);
-            let minX = vertices[0].x, maxX = vertices[0].x, minY = vertices[0].y, maxY = vertices[0].y;
-            for (let i = 1; i < vertices.length; i++) {
-                minX = Math.min(minX, vertices[i].x);
-                maxX = Math.max(maxX, vertices[i].x);
-                minY = Math.min(minY, vertices[i].y);
-                maxY = Math.max(maxY, vertices[i].y);
-            }
-            return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-        },
-
-        // Simple AABB overlap check
-        doRectsOverlap: (rect1, rect2) => {
-            return rect1.x < rect2.x + rect2.width &&
-                   rect1.x + rect1.width > rect2.x &&
-                   rect1.y < rect2.y + rect2.height &&
-                   rect1.y + rect1.height > rect2.y;
-        },
-
-        // Sanitize a string for use as a filename
-        sanitizeFilename: (name) => {
-            if (!name) return 'level';
-            // Remove invalid characters, replace spaces/multiple underscores with single underscore
-            return name.replace(/[^a-z0-9_\-\s.]/gi, '_').replace(/[\s_]+/g, '_');
-        },
-
-         // Check if two game state objects are equal (for undo optimization)
-        statesAreEqual: (stateA, stateB) => {
-            // Comparing stringified JSON is fast but sensitive to key order.
-            // For more complex states, a deep comparison function might be needed.
-            try {
-                return JSON.stringify(stateA) === JSON.stringify(stateB);
-            } catch (e) {
-                console.error("State comparison failed:", e);
-                return false; // Assume not equal if stringify fails
-            }
-        }
-    };
-
-    // --- History / Undo-Redo Manager ---
-    const historyManager = {
-        // Gets a snapshot of the current editable state
-        getCurrentStateSnapshot: () => {
-            // Clone only the data needed for undo/redo (bricks, player, hole)
-            return {
-                bricks: utils.deepClone(gameState.bricks),
-                player: utils.deepClone(gameState.player),
-                hole: utils.deepClone(gameState.hole),
-                // Note: We don't need to save selection or other editor UI state here
-            };
-        },
-
-        // Saves the current state to the history stack
-        saveState: (forceSave = false) => {
-            // Don't save intermediate states during nudging unless forced
-            if (!forceSave && editorState.isNudging) return;
-            editorState.isNudging = false; // Reset nudge flag after potential save
-
-            const currentState = historyManager.getCurrentStateSnapshot();
-            // Avoid saving identical consecutive states
-            if (editorState.historyIndex >= 0 && utils.statesAreEqual(currentState, editorState.history[editorState.historyIndex])) {
-                // console.log("Skipping undo save - state identical.");
-                return;
-            }
-
-            // Truncate history if we undid previously
-            editorState.history = editorState.history.slice(0, editorState.historyIndex + 1);
-            // Push the new state
-            editorState.history.push(currentState);
-            editorState.historyIndex++;
-
-            // Limit history size
-            if (editorState.history.length > MAX_HISTORY) {
-                editorState.history.shift(); // Remove oldest state
-                editorState.historyIndex--; // Adjust index accordingly
-            }
-             // console.log("Saved state. History size:", editorState.history.length, "Index:", editorState.historyIndex);
-        },
-
-        // Loads a state from the history
-        loadStateFromHistory: (stateData) => {
-            if (!stateData) return;
-            // Restore game objects directly from the cloned state data
-            gameState.bricks = utils.deepClone(stateData.bricks);
-            gameState.player = utils.deepClone(stateData.player);
-            gameState.hole = utils.deepClone(stateData.hole);
-
-            // Ensure ball position is updated if it was on the player
-            if (gameState.ball.onPlayer) {
-                gameLogic.resetBallPosition();
-            }
-        },
-
-        // Handles the Undo action
-        undo: () => {
-            if (gameState.mode !== 'editor' || editorState.historyIndex <= 0) return;
-
-            editorState.historyIndex--;
-            const stateToLoad = editorState.history[editorState.historyIndex];
-            historyManager.loadStateFromHistory(stateToLoad);
-            editor.resetSelectionAndDragging(); // Clear selection after undo
-            uiManager.updateBrickPropertiesUI(); // *** NEW: Update properties UI after undo ***
-            drawing.draw();
-            // console.log("Undo. History index:", editorState.historyIndex);
-        },
-
-        // Handles the Redo action
-        redo: () => {
-            if (gameState.mode !== 'editor' || editorState.historyIndex >= editorState.history.length - 1) return;
-
-            editorState.historyIndex++;
-            const stateToLoad = editorState.history[editorState.historyIndex];
-            historyManager.loadStateFromHistory(stateToLoad);
-            editor.resetSelectionAndDragging(); // Clear selection after redo
-            uiManager.updateBrickPropertiesUI(); // *** NEW: Update properties UI after redo ***
-            drawing.draw();
-            // console.log("Redo. History index:", editorState.historyIndex);
-        }
-    };
-
-    // --- UI Manager ---
-    const uiManager = {
-        messageTimeoutId: null,
-
-        hideMenu: () => {
-            menuDiv.classList.add('hidden'); // Use transform for animation
-            showMenuButton.classList.remove('hidden'); // Use opacity for animation
-        },
-
-        showMenu: () => {
-            menuDiv.classList.remove('hidden');
-            showMenuButton.classList.add('hidden');
-        },
-
-        showMessage: (text, duration = MESSAGE_DISPLAY_TIME) => {
-            messageText.textContent = text;
-            messageBox.style.display = 'block';
-            // Clear any existing timeout
-            if (uiManager.messageTimeoutId) {
-                clearTimeout(uiManager.messageTimeoutId);
-            }
-            // Set new timeout to hide message
-            if (duration > 0) {
-                uiManager.messageTimeoutId = setTimeout(uiManager.hideMessage, duration);
-            }
-        },
-
-        hideMessage: () => {
-            messageBox.style.display = 'none';
-            if (uiManager.messageTimeoutId) {
-                clearTimeout(uiManager.messageTimeoutId);
-                uiManager.messageTimeoutId = null;
-            }
-        },
-
-        // Updates the state of buttons and controls based on game mode
-        updateUIForMode: () => {
-            const isEditor = gameState.mode === 'editor';
-            editorControlsDiv.classList.toggle('hidden', !isEditor);
-            saveButton.classList.toggle('hidden', !isEditor);
-            editorButton.classList.toggle('bg-red-500', isEditor); // Active state color
-            editorButton.classList.toggle('hover:bg-red-600', isEditor);
-            editorButton.classList.toggle('bg-green-500', !isEditor);
-            editorButton.classList.toggle('hover:bg-green-600', !isEditor);
-
-            playButton.classList.toggle('bg-red-500', !isEditor); // Active state color
-            playButton.classList.toggle('hover:bg-red-600', !isEditor);
-            playButton.classList.toggle('bg-blue-500', isEditor);
-            playButton.classList.toggle('hover:bg-blue-600', isEditor);
-
-             // Update cursor immediately when switching modes
-            uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y);
-            // Update properties panel visibility based on mode and selection
-            uiManager.updateBrickPropertiesUI();
-        },
-
-        // Updates the level number displays
-        updateLevelDisplays: () => {
-            const displayLevel = gameState.currentLevelIndex + 1;
-            levelDisplay.textContent = displayLevel;
-            editingLevelDisplay.textContent = displayLevel;
-        },
-
-        // Shows the context menu
-        showContextMenu: (x, y) => {
-            contextMenuDiv.innerHTML = ''; // Clear previous options
-            const target = editorState.contextMenuTarget;
-
-            if (target) {
-                if (target.type === 'empty') {
-                    // --- Options for empty space ---
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Brick', () => editor.addBrick('static')));
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Kill Brick', () => editor.addBrick('kill')));
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Vertical Mover', () => editor.addBrick('vertical')));
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Horizontal Mover', () => editor.addBrick('horizontal')));
-                    if (editorState.clipboard.length > 0) {
-                         contextMenuDiv.appendChild(uiManager.createContextMenuButton('Paste', editor.handlePaste));
-                    }
-
-                } else if (target.type === 'brick' && target.index !== undefined) {
-                    // --- Options for existing brick ---
-                    const index = target.index;
-                    const brick = gameState.bricks[index];
-                    if (!brick) return; // Safety check
-
-                    // Toggle Kill Brick
-                    const toggleKillText = brick.isKillBrick ? 'Make Normal Brick' : 'Make Kill Brick';
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton(toggleKillText, () => editor.toggleKillBrick(index)));
-
-                    // --- Movement Options ---
-                    contextMenuDiv.appendChild(document.createElement('hr')); // Separator
-                    if (brick.movementType !== 'vertical') {
-                        contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Vertical Mover', () => editor.setMovementType(index, 'vertical')));
-                    }
-                    if (brick.movementType !== 'horizontal') {
-                         contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Horizontal Mover', () => editor.setMovementType(index, 'horizontal')));
-                    }
-                    if (brick.movementType !== null) {
-                         contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Static', () => editor.setMovementType(index, null)));
-                    }
-
-                    // --- Edit Options ---
-                     contextMenuDiv.appendChild(document.createElement('hr')); // Separator
-                     contextMenuDiv.appendChild(uiManager.createContextMenuButton('Copy', editor.handleCopy)); // Copy selected
-                     contextMenuDiv.appendChild(uiManager.createContextMenuButton('Delete Brick', () => editor.deleteSingleBrick(index)));
-                }
-                 // Add options for player/hole if needed later
-            }
-
-            // Position and display
-            contextMenuDiv.style.left = `${x}px`;
-            contextMenuDiv.style.top = `${y}px`;
-            contextMenuDiv.style.display = 'block';
-        },
-
-        // Hides the context menu
-        hideContextMenu: () => {
-            contextMenuDiv.style.display = 'none';
-            editorState.contextMenuTarget = null;
-        },
-
-        // Helper to create context menu buttons
-        createContextMenuButton: (text, onClickAction) => {
-            const button = document.createElement('button');
-            button.textContent = text;
-            button.onclick = () => {
-                onClickAction(); // Execute the action
-                uiManager.hideContextMenu(); // Hide menu after action
-            };
-            return button;
-        },
-
-        // Helper to create level list control buttons
-         createLevelControlButton: (html, title, onClickAction, disabled = false) => {
-            const button = document.createElement('button');
-            button.innerHTML = html;
-            button.title = title;
-            button.disabled = disabled;
-            button.onclick = (e) => {
-                e.stopPropagation(); // Prevent li click event
-                onClickAction();
-            };
-            return button;
-        },
-
-        // Updates the canvas cursor based on mouse position and editor state
-        updateCursorStyle: (mx, my) => {
-            // Default cursor if not in editor mode or over UI elements
-            if (gameState.mode !== 'editor' || uiManager.isPointerOverUI(mx, my)) {
-                canvas.style.cursor = 'default';
-                return;
-            }
-
-            let cursorSet = false;
-
-            // 1. Check Handles (only if exactly one brick is selected)
-            if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') {
-                const brick = gameState.bricks[editorState.selectedItems[0].index];
-                if (brick) {
-                    const handles = utils.getBrickHandles(brick);
-                    // Check Rotate Handle
-                    if (Math.hypot(mx - handles.rotate.x, my - handles.rotate.y) <= HANDLE_SIZE * 1.5) {
-                        canvas.style.cursor = 'grab'; // Use grab/grabbing for rotate
-                        cursorSet = true;
-                    } else {
-                        // Check Resize Handles
-                        for (const type of ['tl', 'tr', 'bl', 'br']) {
-                            if (Math.hypot(mx - handles[type].x, my - handles[type].y) <= HANDLE_SIZE * 1.2) { // Slightly larger hit area for resize
-                                canvas.style.cursor = (type === 'tl' || type === 'br') ? 'nwse-resize' : 'nesw-resize';
-                                cursorSet = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 2. Check if over the current selection (for dragging)
-            if (!cursorSet && editorState.selectedItems.length > 0) {
-                const isOverSelection = editor.isPointOverSelection(mx, my);
-                if (isOverSelection) {
-                    canvas.style.cursor = 'move';
-                    cursorSet = true;
-                }
-            }
-
-            // 3. Check if over any non-selected item (pointer cursor)
-            if (!cursorSet) {
-                 const isOverAnyItem = editor.getItemAtPoint(mx, my) !== null;
-                 if (isOverAnyItem) {
-                     canvas.style.cursor = 'pointer'; // Indicate clickable item
-                     cursorSet = true;
-                 }
-            }
-
-            // 4. Default cursor if nothing else matches
-            if (!cursorSet) {
-                canvas.style.cursor = 'default';
-            }
-        },
-
-        // Checks if the pointer coordinates are over the menu or show button
-        isPointerOverUI: (px, py) => {
-            if (!menuDiv.classList.contains('hidden')) {
-                const menuRect = menuDiv.getBoundingClientRect();
-                if (px >= menuRect.left && px <= menuRect.right && py >= menuRect.top && py <= menuRect.bottom) {
-                    return true;
-                }
-            }
-            if (!showMenuButton.classList.contains('hidden')) {
-                const buttonRect = showMenuButton.getBoundingClientRect();
-                 if (px >= buttonRect.left && px <= buttonRect.right && py >= buttonRect.top && py <= buttonRect.bottom) {
-                    return true;
-                }
-            }
-            return false;
-        },
-
-        // Updates the marquee box display
-        updateMarqueeBox: () => {
-             if (editorState.isMarqueeSelecting) {
-                const x = Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x);
-                const y = Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y);
-                const width = Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x);
-                const height = Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y);
-                marqueeBox.style.left = `${x}px`;
-                marqueeBox.style.top = `${y}px`;
-                marqueeBox.style.width = `${width}px`;
-                marqueeBox.style.height = `${height}px`;
-                marqueeBox.style.display = 'block';
-            } else {
-                marqueeBox.style.display = 'none';
-            }
-        },
-
-        // *** NEW: Update Brick Properties UI ***
-        updateBrickPropertiesUI: () => {
-            // Don't update if the change came *from* the input to prevent loops
-            if (editorState.isUpdatingPropertiesFromInput) return;
-
-            if (gameState.mode === 'editor' && editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') {
-                const brick = gameState.bricks[editorState.selectedItems[0].index];
-                if (brick) {
-                    brickPropertiesDiv.classList.remove('hidden');
-                    const isMover = brick.movementType === 'vertical' || brick.movementType === 'horizontal';
-
-                    propMoveRangeInput.disabled = !isMover;
-                    propMoveSpeedInput.disabled = !isMover;
-
-                    propMoveRangeInput.value = isMover ? (brick.moveRange ?? DEFAULT_MOVE_RANGE) : '';
-                    propMoveSpeedInput.value = isMover ? (brick.moveSpeed ?? DEFAULT_MOVE_SPEED) : '';
-
-                    // Add placeholder if disabled
-                    propMoveRangeInput.placeholder = isMover ? '' : 'N/A (Static)';
-                    propMoveSpeedInput.placeholder = isMover ? '' : 'N/A (Static)';
-
-                    return; // Exit early as properties are shown
-                }
-            }
-            // Hide properties if no single brick is selected or not in editor mode
-            brickPropertiesDiv.classList.add('hidden');
-        }
-    };
-
-    // --- Game Logic ---
-    const gameLogic = {
-        // Main game update loop (physics, collisions)
-        update: () => {
-            // --- Update Moving Bricks FIRST ---
-            // Only move bricks in play mode
-             if (gameState.mode === 'play') {
-                const time = Date.now() * 0.001; // Time in seconds for smooth oscillation
-
-                gameState.bricks.forEach(brick => {
-                    if (brick.movementType && brick.initialX !== undefined && brick.initialY !== undefined) {
-                        const speed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED;
-                        const range = brick.moveRange ?? DEFAULT_MOVE_RANGE;
-                        // Calculate oscillation offset using sine wave (-range to +range)
-                        const offset = range * Math.sin(time * speed);
-
-                        if (brick.movementType === 'vertical') {
-                            brick.y = brick.initialY + offset;
-                        } else if (brick.movementType === 'horizontal') {
-                            brick.x = brick.initialX + offset;
-                        }
-                        // Note: Angle is not changed by movement
-                    }
-                });
-            }
-            // --- End Brick Movement Update ---
-
-            // Skip ball physics if in editor mode
-            if (gameState.mode === 'editor') return;
-
-            // --- Ball Physics ---
-            if (gameState.ball.fired) {
-                gameState.ball.x += gameState.ball.vx;
-                gameState.ball.y += gameState.ball.vy;
-
-                // --- Boundary Collisions (Restart Level) ---
-                if (gameState.ball.x - gameState.ball.radius < 0) { gameLogic.restartLevelAttempt("Hit left edge!"); return; }
-                if (gameState.ball.x + gameState.ball.radius > canvas.width) { gameLogic.restartLevelAttempt("Hit right edge!"); return; }
-                if (gameState.ball.y - gameState.ball.radius < 0) { gameLogic.restartLevelAttempt("Hit top edge!"); return; }
-                if (gameState.ball.y > canvas.height + gameState.ball.radius * 2) { gameLogic.restartLevelAttempt("Fell off bottom!"); return; } // Allow going slightly off bottom before reset
-
-                // --- Brick Collisions ---
-                for (const brick of gameState.bricks) {
-                    const collision = utils.checkCircleRectCollision(gameState.ball, brick);
-                    if (collision.collision) {
-                        // Check for Kill Brick FIRST
-                        if (brick.isKillBrick) {
-                            gameLogic.restartLevelAttempt("Hit a kill brick!");
-                            return; // Exit update immediately
-                        }
-
-                        // --- Normal/Moving Brick Collision Physics ---
-                        // 1. Push ball out based on MTV to resolve penetration
-                        const pushVector = Vec.scale(collision.normal, collision.overlap * COLLISION_PUSH_FACTOR);
-                        gameState.ball.x += pushVector.x;
-                        gameState.ball.y += pushVector.y;
-
-                        // 2. Reflect ball velocity based on the collision normal
-                        const velocity = Vec.create(gameState.ball.vx, gameState.ball.vy);
-                        const reflectedVel = Vec.reflect(velocity, collision.normal);
-                        gameState.ball.vx = reflectedVel.x;
-                        gameState.ball.vy = reflectedVel.y;
-
-                        // Optional: Add some of the brick's velocity if it's a mover?
-                        // This adds significant complexity (calculating brick velocity at impact point).
-                        // Skipping for now.
-                    }
-                } // End brick loop
-
-                // --- Player Collision (Restart Level) ---
-                // Use simple AABB check for player collision detection after firing
-                 const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height };
-                 const ballRect = { x: gameState.ball.x - gameState.ball.radius, y: gameState.ball.y - gameState.ball.radius, width: gameState.ball.radius * 2, height: gameState.ball.radius * 2 };
-                 if (!gameState.ball.onPlayer && utils.doRectsOverlap(ballRect, playerRect)) {
-                     // More precise check might be needed if player shape is complex
-                     gameLogic.restartLevelAttempt("Ball hit player!");
-                     return;
-                 }
-
-
-                // --- Hole Collision (Win Condition) ---
-                const distToHole = Math.hypot(gameState.ball.x - gameState.hole.x, gameState.ball.y - gameState.hole.y);
-                if (distToHole < gameState.ball.radius + gameState.hole.radius) {
-                    uiManager.showMessage(`Level ${gameState.currentLevelIndex + 1} Complete!`);
-                    const nextLevelIndex = gameState.currentLevelIndex + 1;
-                    if (nextLevelIndex < levelManager.levels.length) {
-                        // Proceed to next level
-                        levelManager.selectLevelToEdit(nextLevelIndex); // This loads the level
-                        gameLogic.startGame(); // Ensure we are in play mode for the new level
-                    } else {
-                        // Beat all levels
-                        uiManager.showMessage("Congratulations! You beat all levels!", 0); // Show indefinitely until OK
-                        gameLogic.switchToEditorMode(); // Switch back to editor after winning
-                    }
-                    return; // Stop update for this frame
-                }
-            } else if (gameState.ball.onPlayer) {
-                // Keep ball position updated relative to player if not fired
-                gameLogic.resetBallPosition();
-            }
-        },
-
-        // Resets the ball to the starting position on the player
-        resetBall: () => {
-            gameState.ball.fired = false;
-            gameState.ball.onPlayer = true;
-            gameState.ball.vx = 0;
-            gameState.ball.vy = 0;
-            editorState.aim.active = false;
-            editorState.aim.dx = 0;
-            editorState.aim.dy = 0;
-            gameLogic.resetBallPosition();
-        },
-
-        // Calculates the ball's position relative to the player
-        resetBallPosition: () => {
-            gameState.ball.x = gameState.player.x + gameState.player.width / 2;
-            // Place ball slightly above the player bar, considering head radius
-            gameState.ball.y = gameState.player.y - gameState.ball.radius - 2;
-        },
-
-        // Fires the ball based on the current aim vector
-        fireBall: () => {
-            if (!gameState.ball.onPlayer || gameState.mode === 'editor' || !editorState.aim.active) return;
-            // Use the calculated dx/dy from mousemove aiming
-            if (Math.abs(editorState.aim.dx) < 0.01 && Math.abs(editorState.aim.dy) < 0.01) return; // Don't fire if aim is negligible
-
-            gameState.ball.fired = true;
-            gameState.ball.onPlayer = false;
-            gameState.ball.vx = editorState.aim.dx;
-            gameState.ball.vy = editorState.aim.dy;
-
-            // Reset aim state after firing
-            editorState.aim.active = false;
-            editorState.aim.dx = 0;
-            editorState.aim.dy = 0;
-        },
-
-        // Restarts the current level attempt (e.g., after hitting hazard)
-        restartLevelAttempt: (reason = "Hazard hit!") => {
-            uiManager.showMessage(`${reason} Restarting level.`, MESSAGE_DISPLAY_TIME);
-            gameLogic.resetBall(); // Reset ball state and position
-            // Bricks will reset their position naturally at the start of the next update cycle
-            // based on their initialX/Y and the time function.
-            drawing.draw(); // Redraw immediately
-        },
-
-        // Switches game to Play Mode
-        startGame: () => {
-            gameState.mode = 'play';
-            editorState.aim.active = false; // Ensure aim isn't stuck on
-            uiManager.hideContextMenu();
-            uiManager.hideMessage(); // Hide any persistent messages
-            editor.resetSelectionAndDragging(); // Clear editor selection
-            // Reload the current level data to ensure bricks start at initial positions
-            levelManager.loadLevelData(gameState.currentLevelIndex);
-            uiManager.updateUIForMode();
-            drawing.draw();
-        },
-
-        // Switches game to Editor Mode
-        switchToEditorMode: () => {
-            gameState.mode = 'editor';
-            editorState.aim.active = false;
-            uiManager.hideContextMenu();
-            // Reload level data to reset any brick movement from play mode
-            levelManager.loadLevelData(gameState.currentLevelIndex);
-            uiManager.updateUIForMode();
-            drawing.draw();
-        }
-    };
-
-    // --- Drawing Functions ---
-    const drawing = {
-        // Main draw function, called every frame
-        draw: () => {
-            // Clear canvas
-            ctx.fillStyle = "#f0f8ff"; // Alice Blue background
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Draw Hole
-            drawing.drawHole();
-
-            // Draw Bricks
-            gameState.bricks.forEach((brick, index) => {
-                drawing.drawBrick(brick, index);
-            });
-
-            // Draw Player
-            drawing.drawPlayer();
-
-            // Draw Ball
-            drawing.drawBall();
-
-            // Draw Aiming Line (Play mode only)
-            if (gameState.mode === 'play' && editorState.aim.active && gameState.ball.onPlayer) {
-                drawing.drawAimLine();
-            }
-
-            // Draw Editor Elements (Handles, Marquee, Range Indicators)
-            if (gameState.mode === 'editor') {
-                 drawing.drawEditorOverlays();
-            }
-        },
-
-        // Draw the hole
-        drawHole: () => {
-            const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'hole');
-            ctx.fillStyle = "#222"; // Dark hole color
-            ctx.beginPath();
-            ctx.arc(gameState.hole.x, gameState.hole.y, gameState.hole.radius, 0, Math.PI * 2);
-            ctx.fill();
-            // Draw selection outline
-            if (isSelected) {
-                ctx.strokeStyle = SELECTED_ITEM_OUTLINE_COLOR;
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
-        },
-
-        // Draw a single brick
-        drawBrick: (brick, index) => {
-            const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'brick' && item.index === index);
-            ctx.save(); // Save context state (transform, styles)
-
-            // --- Apply transformations ---
-            // Translate to the brick's center, rotate, then translate back
-            const centerX = brick.x + brick.width / 2;
-            const centerY = brick.y + brick.height / 2;
-            ctx.translate(centerX, centerY);
-            ctx.rotate(brick.angle || 0);
-            ctx.translate(-centerX, -centerY);
-
-            // --- Determine Fill Color ---
-            let fillColor = BRICK_COLOR; // Default static brick
-            if (brick.isKillBrick) {
-                fillColor = KILL_BRICK_COLOR;
-            } else if (brick.movementType === 'vertical') {
-                fillColor = VERTICAL_MOVER_COLOR;
-            } else if (brick.movementType === 'horizontal') {
-                fillColor = HORIZONTAL_MOVER_COLOR;
-            }
-            // Selection overrides fill color for better visibility
-            if (isSelected) {
-                fillColor = SELECTED_BRICK_COLOR;
-            }
-            ctx.fillStyle = fillColor;
-
-            // --- Draw Rectangle ---
-            ctx.strokeStyle = BRICK_STROKE_COLOR;
-            ctx.lineWidth = 1;
-            // Draw at the brick's current x, y (top-left)
-            ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
-            ctx.strokeRect(brick.x, brick.y, brick.width, brick.height);
-
-            ctx.restore(); // Restore context state
-        },
-
-        // Draw the player
-        drawPlayer: () => {
-            const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'player');
-            const player = gameState.player;
-
-            // Draw player body (rectangle)
-            ctx.fillStyle = "#4CAF50"; // Green body
-            ctx.fillRect(player.x, player.y, player.width, player.height);
-
-            // Draw player head (circle)
-            const headX = player.x + player.width / 2;
-            const headY = player.y - PLAYER_HEAD_RADIUS; // Head sits above the body
-            ctx.fillStyle = "#8BC34A"; // Lighter green head
-            ctx.beginPath();
-            ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Draw selection outline
-            if (isSelected) {
-                ctx.strokeStyle = SELECTED_ITEM_OUTLINE_COLOR;
-                ctx.lineWidth = 2;
-                // Outline body
-                ctx.strokeRect(player.x, player.y, player.width, player.height);
-                // Outline head
-                ctx.beginPath();
-                ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-        },
-
-        // Draw the ball
-        drawBall: () => {
-            ctx.save();
-            ctx.fillStyle = "white";
-            ctx.strokeStyle = "black";
-            ctx.lineWidth = BALL_OUTLINE_WIDTH;
-            ctx.beginPath();
-            ctx.arc(gameState.ball.x, gameState.ball.y, gameState.ball.radius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
-        },
-
-        // Draw the aiming line
-        drawAimLine: () => {
-            ctx.beginPath();
-            ctx.moveTo(gameState.ball.x, gameState.ball.y);
-
-            // Use the calculated potential velocity from mousemove
-            const potentialVx = editorState.aim.dx;
-            const potentialVy = editorState.aim.dy;
-
-            // Draw line based on potential velocity scaled for visibility
-            const endX = gameState.ball.x + potentialVx * AIM_VISUAL_SCALE;
-            const endY = gameState.ball.y + potentialVy * AIM_VISUAL_SCALE;
-
-            ctx.lineTo(endX, endY);
-            ctx.strokeStyle = "rgba(255, 0, 0, 0.7)"; // Red aim line
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 3]); // Dashed line
-            ctx.stroke();
-            ctx.setLineDash([]); // Reset line dash
-
-            // Draw small circle at the end point
-            ctx.beginPath();
-            ctx.arc(endX, endY, 3, 0, Math.PI * 2);
-            ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
-            ctx.fill();
-        },
-
-         // Draw editor-specific overlays like handles and range indicators
-        drawEditorOverlays: () => {
-            // Draw overlays only if exactly one brick is selected
-            if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') {
-                const brick = gameState.bricks[editorState.selectedItems[0].index];
-                if (brick) {
-                    // --- Draw Movement Range Indicator ---
-                    if (brick.movementType === 'vertical' || brick.movementType === 'horizontal') {
-                        drawing.drawMovementRange(brick);
-                    }
-
-                    // --- Draw Handles ---
-                    drawing.drawHandles(brick);
-                }
-            }
-            // Marquee box is handled by CSS/DOM element
-        },
-
-        // *** NEW: Draw Movement Range Indicator ***
-        drawMovementRange: (brick) => {
-            const range = brick.moveRange ?? DEFAULT_MOVE_RANGE;
-            // Use initial position as the center of oscillation
-            const initialCenterX = (brick.initialX ?? brick.x) + brick.width / 2;
-            const initialCenterY = (brick.initialY ?? brick.y) + brick.height / 2;
-
-            ctx.save();
-            ctx.strokeStyle = MOVER_RANGE_INDICATOR_COLOR;
-            ctx.lineWidth = MOVER_RANGE_INDICATOR_WIDTH;
-            ctx.setLineDash([4, 4]); // Dashed line for indicator
-            ctx.beginPath();
-
-            if (brick.movementType === 'vertical') {
-                const y1 = initialCenterY - range;
-                const y2 = initialCenterY + range;
-                ctx.moveTo(initialCenterX, y1);
-                ctx.lineTo(initialCenterX, y2);
-                // Add small end caps
-                ctx.moveTo(initialCenterX - 5, y1); ctx.lineTo(initialCenterX + 5, y1);
-                ctx.moveTo(initialCenterX - 5, y2); ctx.lineTo(initialCenterX + 5, y2);
-            } else { // Horizontal
-                const x1 = initialCenterX - range;
-                const x2 = initialCenterX + range;
-                ctx.moveTo(x1, initialCenterY);
-                ctx.lineTo(x2, initialCenterY);
-                // Add small end caps
-                ctx.moveTo(x1, initialCenterY - 5); ctx.lineTo(x1, initialCenterY + 5);
-                ctx.moveTo(x2, initialCenterY - 5); ctx.lineTo(x2, initialCenterY + 5);
-            }
-
-            ctx.stroke();
-            ctx.restore();
-        },
-
-        // *** NEW: Draw Handles (extracted logic) ***
-        drawHandles: (brick) => {
-            const handles = utils.getBrickHandles(brick); // Handles based on current position
-            ctx.fillStyle = HANDLE_COLOR;
-
-            // Draw Resize Handles (corners)
-            for (const type of ['tl', 'tr', 'bl', 'br']) {
-                ctx.beginPath();
-                ctx.arc(handles[type].x, handles[type].y, HANDLE_SIZE, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            // Draw Rotate Handle
-            ctx.beginPath();
-            ctx.arc(handles.rotate.x, handles.rotate.y, HANDLE_SIZE * ROTATE_HANDLE_SIZE_FACTOR, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Draw line from center to rotate handle
-            ctx.beginPath();
-            ctx.moveTo(handles.center.x, handles.center.y);
-            ctx.lineTo(handles.rotate.x, handles.rotate.y);
-            ctx.strokeStyle = HANDLE_COLOR;
-            ctx.lineWidth = 1;
-            ctx.setLineDash([2, 2]);
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-    };
-
-    // --- Editor Logic (Interactions, Tools) ---
-    const editor = {
-        // Resets selection, dragging state, and history
-        resetSelectionAndHistory: () => {
-            editorState.selectedItems = [];
-            editor.resetSelectionAndDragging();
-            editorState.history = [];
-            editorState.historyIndex = -1;
-            // Don't save state here, should be done after level load
-            uiManager.updateBrickPropertiesUI(); // Update UI based on cleared selection
-        },
-
-        // Resets only dragging/interaction states
-         resetSelectionAndDragging: () => {
-            editorState.draggingHandle = null;
-            editorState.isDraggingSelection = false;
-            editorState.isMarqueeSelecting = false;
-            editorState.originalItemStates = [];
-            uiManager.updateMarqueeBox(); // Ensure marquee is hidden
-            uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y); // Reset cursor
-            // Note: Selection itself is NOT reset here, call resetSelectionAndHistory for that
-        },
-
-        // Adds a brick of a specific type at the context menu location
-        addBrick: (type = 'static') => {
-            if (gameState.mode !== 'editor' || !editorState.contextMenuTarget || editorState.contextMenuTarget.type !== 'empty') return;
-
-            historyManager.saveState(); // Save state before adding
-
-            const x = editorState.contextMenuTarget.x || editorState.mouse.x;
-            const y = editorState.contextMenuTarget.y || editorState.mouse.y;
-            const width = 100;
-            const height = 20;
-            const initialX = x - width / 2; // Center the new brick horizontally
-            const initialY = y - height / 2; // Center the new brick vertically
-
-            const newBrick = {
-                x: initialX, y: initialY, width: width, height: height, angle: 0,
-                isKillBrick: type === 'kill',
-                movementType: (type === 'vertical' || type === 'horizontal') ? type : null,
-                moveRange: DEFAULT_MOVE_RANGE,
-                moveSpeed: DEFAULT_MOVE_SPEED,
-                initialX: initialX, // Set initial position explicitly
-                initialY: initialY
-            };
-
-            gameState.bricks.push(newBrick);
-            // Select the newly added brick
-            editorState.selectedItems = [{ type: 'brick', index: gameState.bricks.length - 1 }];
-            editor.resetSelectionAndDragging(); // Reset drag state
-            uiManager.updateBrickPropertiesUI(); // Update properties for new selection
-            drawing.draw();
-        },
-
-        // Toggles the kill brick status
-        toggleKillBrick: (index) => {
-            if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return;
-            historyManager.saveState();
-            const brick = gameState.bricks[index];
-            brick.isKillBrick = !brick.isKillBrick;
-
-            // Ensure the brick is selected after modification
-             editor.ensureItemSelected({ type: 'brick', index: index });
-             uiManager.updateBrickPropertiesUI(); // Update UI in case selection changed
-            drawing.draw();
-        },
-
-        // Sets the movement type for a brick
-        setMovementType: (index, type) => { // type can be 'vertical', 'horizontal', or null
-            if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return;
-            historyManager.saveState();
-            const brick = gameState.bricks[index];
-
-            if (type === null) {
-                // --- Making Static ---
-                brick.movementType = null;
-                // Reset position to initial position when making static
-                // This ensures it doesn't jump if modified while moving in play mode (though we reload on mode switch)
-                if (brick.initialX !== undefined) brick.x = brick.initialX;
-                if (brick.initialY !== undefined) brick.y = brick.initialY;
-            } else {
-                // --- Making a Mover (or changing type) ---
-                 // Set initial position to current position if it wasn't a mover before,
-                 // or if its initial position wasn't properly set.
-                if (brick.movementType !== type || brick.initialX === undefined || brick.initialY === undefined) {
-                    brick.initialX = brick.x;
-                    brick.initialY = brick.y;
-                }
-                brick.movementType = type;
-                // Ensure defaults are set (might be redundant if addBrick sets them)
-                brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE;
-                brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED;
-            }
-
-            editor.ensureItemSelected({ type: 'brick', index: index });
-            uiManager.updateBrickPropertiesUI(); // Update UI for new type/selection
-            drawing.draw();
-        },
-
-        // Deletes a single brick by index (usually from context menu)
-        deleteSingleBrick: (index) => {
-            if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return;
-            historyManager.saveState();
-            gameState.bricks.splice(index, 1);
-
-            // Update selection: remove the deleted item and adjust indices of subsequent items
-            editorState.selectedItems = editorState.selectedItems
-                .filter(item => !(item.type === 'brick' && item.index === index))
-                .map(item => {
-                    if (item.type === 'brick' && item.index > index) {
-                        item.index--; // Decrement index for items after the deleted one
-                    }
-                    return item;
-                });
-
-            editor.resetSelectionAndDragging();
-            uiManager.updateBrickPropertiesUI(); // Update properties for new selection
-            drawing.draw();
-        },
-
-        // Deletes all currently selected items (triggered by Delete/Backspace key)
-        deleteSelectedItems: () => {
-            if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return;
-
-            historyManager.saveState();
-
-            const brickIndicesToDelete = editorState.selectedItems
-                .filter(item => item.type === 'brick')
-                .map(item => item.index)
-                .sort((a, b) => b - a); // Sort descending to delete from end
-
-            const deletedPlayer = editorState.selectedItems.some(item => item.type === 'player');
-            const deletedHole = editorState.selectedItems.some(item => item.type === 'hole');
-
-            // Delete bricks
-            brickIndicesToDelete.forEach(index => {
-                if (index >= 0 && index < gameState.bricks.length) {
-                     gameState.bricks.splice(index, 1);
-                } else {
-                    console.warn("Attempted to delete invalid brick index:", index);
-                }
-            });
-
-            // Cannot delete player or hole
-            if (deletedPlayer || deletedHole) {
-                uiManager.showMessage("Player and Hole cannot be deleted.", 1500);
-            }
-
-            // Clear selection after deletion
-            editorState.selectedItems = [];
-            editor.resetSelectionAndDragging();
-            uiManager.updateBrickPropertiesUI(); // Update properties for cleared selection
-            drawing.draw();
-        },
-
-        // --- Copy / Paste ---
-        handleCopy: () => {
-            if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return;
-            editorState.clipboard = [];
-            editorState.selectedItems.forEach(item => {
-                if (item.type === 'brick') {
-                    // Clone the brick data, importantly including its current state
-                    // which also holds its initialX/Y reference point.
-                    editorState.clipboard.push(utils.deepClone(gameState.bricks[item.index]));
-                }
-                // Could add player/hole copying if needed
-            });
-             uiManager.showMessage(`Copied ${editorState.clipboard.length} brick(s).`, 1000);
-        },
-
-        handlePaste: () => {
-            if (gameState.mode !== 'editor' || editorState.clipboard.length === 0) return;
-            historyManager.saveState();
-
-            const newSelection = [];
-            editorState.clipboard.forEach(itemData => {
-                if (itemData) { // Check if itemData is valid
-                    const newItem = utils.deepClone(itemData);
-                    // Offset the pasted item's position AND initial position
-                    newItem.x += PASTE_OFFSET;
-                    newItem.y += PASTE_OFFSET;
-                    newItem.initialX = (newItem.initialX !== undefined ? newItem.initialX : newItem.x - PASTE_OFFSET) + PASTE_OFFSET;
-                    newItem.initialY = (newItem.initialY !== undefined ? newItem.initialY : newItem.y - PASTE_OFFSET) + PASTE_OFFSET;
-
-                    gameState.bricks.push(newItem);
-                    newSelection.push({ type: 'brick', index: gameState.bricks.length - 1 });
-                }
-            });
-
-            editorState.selectedItems = newSelection; // Select only the newly pasted items
-            editor.resetSelectionAndDragging();
-            uiManager.updateBrickPropertiesUI(); // Update properties for new selection
-            drawing.draw();
-        },
-
-        // --- Nudging ---
-         handleNudge: (dx, dy) => {
-            if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0 || (dx === 0 && dy === 0)) return;
-
-            // Save state only on the *first* nudge key press in a sequence
-            if (!editorState.isNudging) {
-                historyManager.saveState();
-                editorState.isNudging = true; // Set flag
-            }
-
-            editorState.selectedItems.forEach(item => {
-                if (item.type === 'brick') {
-                    const brick = gameState.bricks[item.index];
-                    brick.x += dx;
-                    brick.y += dy;
-                    // IMPORTANT: Update initial position as well when nudging
-                    brick.initialX += dx;
-                    brick.initialY += dy;
-                } else if (item.type === 'player') {
-                    gameState.player.x += dx;
-                    gameState.player.y += dy;
-                    // Update ball position if it's on the player
-                    if (gameState.ball.onPlayer) gameLogic.resetBallPosition();
-                } else if (item.type === 'hole') {
-                    gameState.hole.x += dx;
-                    gameState.hole.y += dy;
-                }
-            });
-            drawing.draw();
-        },
-
-        // --- Selection Logic ---
-        // Selects an item, handling multi-select with Ctrl/Meta key
-        selectItem: (itemToSelect, ctrlPressed) => {
-            if (!itemToSelect) return; // Nothing to select
-
-            const alreadySelected = editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index);
-
-            if (ctrlPressed) {
-                // Ctrl/Meta key: Toggle selection
-                if (alreadySelected) {
-                    // Remove from selection
-                    editorState.selectedItems = editorState.selectedItems.filter(sel => !(sel.type === itemToSelect.type && sel.index === itemToSelect.index));
-                } else {
-                    // Add to selection
-                    editorState.selectedItems.push(itemToSelect);
-                }
-            } else {
-                // No modifier key: Select only this item, unless clicking on already selected item
-                if (!alreadySelected) {
-                    editorState.selectedItems = [itemToSelect];
-                }
-                // If clicking an already selected item without Ctrl, do nothing (allows dragging the current selection)
-            }
-             uiManager.updateBrickPropertiesUI(); // Update properties panel based on new selection
-        },
-
-        // Ensures a specific item is selected (adds it if not already)
-        ensureItemSelected: (itemToSelect) => {
-             if (!editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index)) {
-                 editorState.selectedItems.push(itemToSelect);
-                 uiManager.updateBrickPropertiesUI(); // Update properties if selection changed
-             }
-        },
-
-        // Finds the topmost selectable item (brick, player, hole) at given coordinates
-        getItemAtPoint: (px, py) => {
-            // Check bricks first (topmost = last in array)
-            for (let i = gameState.bricks.length - 1; i >= 0; i--) {
-                if (utils.isPointInRotatedRect(px, py, gameState.bricks[i])) {
-                    return { type: 'brick', index: i };
-                }
-            }
-            // Check player (body and head)
-            const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height };
-            const headCenter = { x: gameState.player.x + gameState.player.width / 2, y: gameState.player.y - PLAYER_HEAD_RADIUS };
-            if ((Math.hypot(px - headCenter.x, py - headCenter.y) <= PLAYER_HEAD_RADIUS) ||
-                (px >= playerRect.x && px <= playerRect.x + playerRect.width && py >= playerRect.y && py <= playerRect.y + playerRect.height)) {
-                return { type: 'player', index: null };
-            }
-            // Check hole
-            if (Math.hypot(px - gameState.hole.x, py - gameState.hole.y) <= gameState.hole.radius) {
-                return { type: 'hole', index: null };
-            }
-            return null; // Nothing found
-        },
-
-         // Checks if the given point is over any currently selected item
-        isPointOverSelection: (px, py) => {
-            return editorState.selectedItems.some(item => {
-                 if (item.type === 'brick') {
-                     const brick = gameState.bricks[item.index];
-                     return brick && utils.isPointInRotatedRect(px, py, brick); // Add safety check for brick existence
-                } else if (item.type === 'player') {
-                    const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height };
-                    const headCenter = { x: gameState.player.x + gameState.player.width / 2, y: gameState.player.y - PLAYER_HEAD_RADIUS };
-                    return (Math.hypot(px - headCenter.x, py - headCenter.y) <= PLAYER_HEAD_RADIUS) ||
-                           (px >= playerRect.x && px <= playerRect.x + playerRect.width && py >= playerRect.y && py <= playerRect.y + playerRect.height);
-                } else if (item.type === 'hole') {
-                    return Math.hypot(px - gameState.hole.x, py - gameState.hole.y) <= gameState.hole.radius;
-                }
-                return false;
-            });
-        },
-
-        // Finds which handle (if any) is at the given point for the currently selected single brick
-        getHandleAtPoint: (px, py) => {
-            if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') {
-                return null;
-            }
-            const brick = gameState.bricks[editorState.selectedItems[0].index];
-            if (!brick) return null;
-
-            const handles = utils.getBrickHandles(brick);
-            // Check rotate handle first (slightly larger hit area)
-            if (Math.hypot(px - handles.rotate.x, py - handles.rotate.y) <= HANDLE_SIZE * 1.5) {
-                return { type: 'rotate', itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) };
-            }
-            // Check resize handles
-            for (const type of ['tl', 'tr', 'bl', 'br']) {
-                if (Math.hypot(px - handles[type].x, py - handles[type].y) <= HANDLE_SIZE * 1.2) {
-                     return { type: type, itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) };
-                }
-            }
-            return null;
-        },
-
-        // Finalizes marquee selection
-        finalizeMarqueeSelection: (ctrlPressed) => {
-            const marqueeRect = {
-                x: Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x),
-                y: Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y),
-                width: Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x),
-                height: Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y)
-            };
-
-            // Ignore tiny marquees (likely accidental clicks)
-            if (marqueeRect.width < 5 && marqueeRect.height < 5) {
-                 // If no ctrl key, treat as click on empty space -> deselect all
-                if (!ctrlPressed) {
-                    editorState.selectedItems = [];
-                }
-                uiManager.updateBrickPropertiesUI(); // Update properties panel
-                return;
-            }
-
-
-            const newlySelected = [];
-            // Check bricks
-            gameState.bricks.forEach((brick, index) => {
-                const brickBounds = utils.getRectBoundingBox(brick); // Use AABB for marquee check
-                if (utils.doRectsOverlap(marqueeRect, brickBounds)) {
-                    newlySelected.push({ type: 'brick', index: index });
-                }
-            });
-            // Check player
-            const playerBounds = { x: gameState.player.x, y: gameState.player.y - PLAYER_HEAD_RADIUS * 2, width: gameState.player.width, height: gameState.player.height + PLAYER_HEAD_RADIUS * 2 };
-            if (utils.doRectsOverlap(marqueeRect, playerBounds)) {
-                newlySelected.push({ type: 'player', index: null });
-            }
-            // Check hole
-            const holeBounds = { x: gameState.hole.x - gameState.hole.radius, y: gameState.hole.y - gameState.hole.radius, width: gameState.hole.radius * 2, height: gameState.hole.radius * 2 };
-            if (utils.doRectsOverlap(marqueeRect, holeBounds)) {
-                newlySelected.push({ type: 'hole', index: null });
-            }
-
-            if (ctrlPressed) {
-                // Add newly selected items to the existing selection, avoiding duplicates
-                newlySelected.forEach(newItem => {
-                    if (!editorState.selectedItems.some(sel => sel.type === newItem.type && sel.index === newItem.index)) {
-                        editorState.selectedItems.push(newItem);
-                    }
-                });
-            } else {
-                // Replace selection with newly selected items
-                editorState.selectedItems = newlySelected;
-            }
-            uiManager.updateBrickPropertiesUI(); // Update properties panel
-        },
-
-         // Updates items during a drag operation
-        updateItemsDuringDrag: (dx, dy) => {
-            editorState.selectedItems.forEach((item, i) => {
-                const origState = editorState.originalItemStates[i];
-                if (!origState) return; // Safety check
-
-                if (item.type === 'brick') {
-                    const brick = gameState.bricks[item.index];
-                    if (!brick) return;
-                    brick.x = origState.x + dx;
-                    brick.y = origState.y + dy;
-                    // DO NOT update initialX/Y during drag, only on mouseup
-                } else if (item.type === 'player') {
-                    gameState.player.x = origState.x + dx;
-                    gameState.player.y = origState.y + dy;
-                    if (gameState.ball.onPlayer) gameLogic.resetBallPosition();
-                } else if (item.type === 'hole') {
-                    gameState.hole.x = origState.x + dx;
-                    gameState.hole.y = origState.y + dy;
-                }
-            });
-        },
-
-        // Updates brick during resize operation
-        updateBrickDuringResize: (handleType, currentMouseX, currentMouseY) => {
-            // Ensure draggingHandle and its properties exist
-            if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return;
-
-            const brickIndex = editorState.draggingHandle.itemRef.index;
-            if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; // Validate index
-
-            const brick = gameState.bricks[brickIndex];
-            const origState = editorState.draggingHandle.startBrickState; // Use the saved state at handle grab start
-
-            // --- Calculate new dimensions and position based on handle dragged ---
-            // 1. Transform mouse coordinates to the brick's local coordinate system (at drag start)
-            const origAngle = origState.angle || 0;
-            const cosA = Math.cos(-origAngle); // Cosine for reverse rotation
-            const sinA = Math.sin(-origAngle); // Sine for reverse rotation
-            const ocx = origState.x + origState.width / 2; // Original center X
-            const ocy = origState.y + origState.height / 2; // Original center Y
-
-            const dxWorld = currentMouseX - ocx; // Mouse delta from original center (world)
-            const dyWorld = currentMouseY - ocy;
-
-            // Rotate mouse delta into original brick's local space
-            const localMx = dxWorld * cosA - dyWorld * sinA;
-            const localMy = dxWorld * sinA + dyWorld * cosA;
-
-            // 2. Determine new half-width/height based on which handle is dragged
-            let newHalfWidth, newHalfHeight;
-            switch (handleType) {
-                case 'br': newHalfWidth = localMx; newHalfHeight = localMy; break;
-                case 'bl': newHalfWidth = -localMx; newHalfHeight = localMy; break;
-                case 'tr': newHalfWidth = localMx; newHalfHeight = -localMy; break;
-                case 'tl': newHalfWidth = -localMx; newHalfHeight = -localMy; break;
-                default: return; // Should not happen
-            }
-
-            // Enforce minimum dimensions
-            newHalfWidth = Math.max(MIN_BRICK_DIMENSION / 2, newHalfWidth);
-            newHalfHeight = Math.max(MIN_BRICK_DIMENSION / 2, newHalfHeight);
-
-            const newWidth = 2 * newHalfWidth;
-            const newHeight = 2 * newHalfHeight;
-
-            // 3. Calculate the shift of the center point due to resizing
-            // The pivot point is the corner opposite the dragged handle.
-            // Calculate the center shift in the brick's local coordinate system first.
-            const centerShiftXLocal = (newWidth - origState.width) / 2;
-            const centerShiftYLocal = (newHeight - origState.height) / 2;
-
-            // Determine which direction the center shifts based on the handle
-            let shiftFactorX = 0, shiftFactorY = 0;
-            switch(handleType) {
-                case 'tl': shiftFactorX = -1; shiftFactorY = -1; break;
-                case 'tr': shiftFactorX = 1; shiftFactorY = -1; break;
-                case 'bl': shiftFactorX = -1; shiftFactorY = 1; break;
-                case 'br': shiftFactorX = 1; shiftFactorY = 1; break;
-            }
-
-            const finalShiftLocalX = centerShiftXLocal * shiftFactorX;
-            const finalShiftLocalY = centerShiftYLocal * shiftFactorY;
-
-            // 4. Rotate the local center shift back to world coordinates
-            const cosARot = Math.cos(origAngle); // Cosine for forward rotation
-            const sinARot = Math.sin(origAngle); // Sine for forward rotation
-            const centerShiftWorldX = finalShiftLocalX * cosARot - finalShiftLocalY * sinARot;
-            const centerShiftWorldY = finalShiftLocalX * sinARot + finalShiftLocalY * cosARot;
-
-            // 5. Calculate the new center position
-            const newCx = ocx + centerShiftWorldX;
-            const newCy = ocy + centerShiftWorldY;
-
-            // 6. Update brick properties
-            brick.width = newWidth;
-            brick.height = newHeight;
-            brick.angle = origAngle; // Angle doesn't change during resize
-
-            // Calculate the new top-left corner (brick.x, brick.y) from the new center and dimensions
-            const localTLX = -newWidth / 2; // New top-left in local coords
-            const localTLY = -newHeight / 2;
-            brick.x = newCx + (localTLX * cosARot - localTLY * sinARot);
-            brick.y = newCy + (localTLX * sinARot + localTLY * cosARot);
-
-            // DO NOT update initialX/Y during resize, only on mouseup
-        },
-
-        // Updates brick angle during rotation
-        updateBrickDuringRotate: (currentMouseX, currentMouseY) => {
-             // Ensure draggingHandle and its properties exist
-            if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return;
-
-            const brickIndex = editorState.draggingHandle.itemRef.index;
-            if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; // Validate index
-
-            const brick = gameState.bricks[brickIndex];
-            const origState = editorState.draggingHandle.startBrickState;
-            const center = utils.getBrickHandles(origState).center; // Use center from original state
-
-            // Calculate angle from center to current mouse position
-            const currentAngle = Math.atan2(currentMouseY - center.y, currentMouseX - center.x);
-            // Calculate angle from center to drag start position
-            const startAngle = Math.atan2(editorState.dragStart.y - center.y, editorState.dragStart.x - center.x);
-
-            // Apply the difference to the original angle
-            brick.angle = origState.angle + (currentAngle - startAngle);
-
-            // DO NOT update initialX/Y during rotate, only on mouseup
-        },
-
-         // Finalizes state after drag/resize/rotate, updating initial positions
-        finalizeItemManipulation: () => {
-            // Update initialX/Y for all manipulated bricks to their final position/state
-            if (editorState.draggingHandle || editorState.isDraggingSelection) {
-                editorState.selectedItems.forEach(item => {
-                    if (item.type === 'brick') {
-                        const brick = gameState.bricks[item.index];
-                        if (!brick) return; // Safety check
-                        // Update initial position to match the final dragged/resized position
-                        brick.initialX = brick.x;
-                        brick.initialY = brick.y;
-                        // Note: Angle is already updated during rotation drag
-                    }
-                    // Player/Hole don't have 'initial' positions in the same way,
-                    // their current position is saved directly.
-                });
-
-                // --- Optimize Undo History ---
-                // Compare the final state with the state saved *before* the drag started.
-                const previousState = editorState.history[editorState.historyIndex];
-                const currentState = historyManager.getCurrentStateSnapshot(); // Get state *after* updating initialX/Y
-
-                if (previousState && utils.statesAreEqual(previousState, currentState)) {
-                     // If the state hasn't actually changed (e.g., dragged back to start),
-                     // remove the state that was potentially saved on mousedown.
-                     // This prevents cluttering history with no-op actions.
-                     // console.log("Drag/resize ended with no state change. Popping history.");
-                     editorState.history.pop();
-                     editorState.historyIndex--;
-                 } else {
-                     // If the state *did* change, the state saved on mousedown is now the
-                     // 'before' state, and the current state is the 'after' state.
-                     // We need to save the *final* state again to replace the intermediate one saved on mousedown.
-                     // console.log("Finalizing state after drag/resize.");
-                     if (editorState.historyIndex >= 0 && editorState.history.length > editorState.historyIndex) {
-                          editorState.history[editorState.historyIndex] = currentState; // Replace the mousedown save
-                     } else {
-                         // Should not happen if saveState was called correctly on mousedown
-                         console.warn("History index issue during finalization.");
-                         historyManager.saveState(true); // Force save the final state if index is weird
-                     }
-                 }
-            }
-        },
-
-        // *** NEW: Handle changes from property input fields ***
-        handlePropertyChange: (event) => {
-            if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') {
-                return; // Should only be called when a single brick is selected
-            }
-
-            const brickIndex = editorState.selectedItems[0].index;
-            if (brickIndex < 0 || brickIndex >= gameState.bricks.length) return;
-            const brick = gameState.bricks[brickIndex];
-
-            const propertyName = event.target.name; // 'moveRange' or 'moveSpeed'
-            const value = parseFloat(event.target.value);
-
-            // Validate the parsed value
-            if (isNaN(value) || value < 0) {
-                console.warn(`Invalid value entered for ${propertyName}:`, event.target.value);
-                // Optionally reset the input to the brick's current value or a default
-                event.target.value = brick[propertyName] ?? (propertyName === 'moveRange' ? DEFAULT_MOVE_RANGE : DEFAULT_MOVE_SPEED);
-                return;
-            }
-
-            // Check if the value actually changed
-            if (brick[propertyName] === value) {
-                return; // No change, do nothing
-            }
-
-            // Save state *before* applying the change
-            historyManager.saveState();
-
-            // Apply the change
-            brick[propertyName] = value;
-
-            // Set flag to prevent updateBrickPropertiesUI from looping
-            editorState.isUpdatingPropertiesFromInput = true;
-            // Redraw canvas to update visual range indicator
-            drawing.draw();
-            // Reset flag after drawing
-            editorState.isUpdatingPropertiesFromInput = false;
-        }
-    };
-
-    // --- Event Handlers ---
-    const eventHandlers = {
-        handleResize: () => {
-            utils.resizeCanvas();
-        },
-
-        handleContextMenu: (e) => {
-            e.preventDefault(); // Prevent default browser context menu
-            uiManager.hideContextMenu(); // Hide any existing menu
-
-            // Don't show menu if over UI elements or in play mode
-            if (gameState.mode !== 'editor' || uiManager.isPointerOverUI(e.clientX, e.clientY)) {
-                return;
-            }
-
-            const mx = e.clientX;
-            const my = e.clientY;
-
-            // Determine what was clicked
-            let targetItem = editor.getItemAtPoint(mx, my);
-            let targetType = 'empty';
-            let targetIndex = null;
-
-            if (targetItem) {
-                targetType = targetItem.type;
-                targetIndex = targetItem.index;
-                // Select the right-clicked item if it's not already part of the selection
-                 if (!editorState.selectedItems.some(sel => sel.type === targetType && sel.index === targetIndex)) {
-                     editorState.selectedItems = [targetItem]; // Select only the right-clicked item
-                     uiManager.updateBrickPropertiesUI(); // Update properties panel
-                     drawing.draw(); // Update visual selection
-                 }
-            }
-
-            editorState.contextMenuTarget = { type: targetType, index: targetIndex, x: mx, y: my };
-            uiManager.showContextMenu(mx, my);
-        },
-
-        handleMouseDown: (e) => {
-            // Ignore clicks that aren't left button or are over UI
-            if (e.button !== 0 || uiManager.isPointerOverUI(e.clientX, e.clientY)) {
-                return;
-            }
-
-            editorState.mouse.down = true;
-            editorState.mouse.x = e.clientX;
-            editorState.mouse.y = e.clientY;
-            editorState.mouse.dragStartX = editorState.mouse.x; // Record start for click vs drag detection
-            editorState.mouse.dragStartY = editorState.mouse.y;
-
-            uiManager.hideContextMenu(); // Hide context menu on any click
-            editor.resetSelectionAndDragging(); // Reset flags before processing click
-
-            if (gameState.mode === 'editor') {
-                // --- Editor Mode Mouse Down ---
-                const mx = editorState.mouse.x;
-                const my = editorState.mouse.y;
-                const ctrlPressed = e.ctrlKey || e.metaKey; // Handle Cmd on Mac
-
-                // 1. Check for Handle Click (highest priority)
-                const clickedHandle = editor.getHandleAtPoint(mx, my);
-                if (clickedHandle) {
-                    editorState.draggingHandle = clickedHandle;
-                    editorState.dragStart = { x: mx, y: my }; // Start point for handle drag
-                    // Save state *before* starting handle manipulation
-                    historyManager.saveState();
-                    canvas.style.cursor = clickedHandle.type === 'rotate' ? 'grabbing' : // Use grabbing for rotate
-                                         (clickedHandle.type === 'tl' || clickedHandle.type === 'br') ? 'nwse-resize' : 'nesw-resize';
-
-                } else {
-                    // 2. Check for Item Click
-                    const clickedItem = editor.getItemAtPoint(mx, my);
-                    if (clickedItem) {
-                        const isClickOnSelection = editor.isPointOverSelection(mx, my);
-
-                        // Update selection based on Ctrl key and whether clicking existing selection
-                        editor.selectItem(clickedItem, ctrlPressed); // This now handles selection logic and UI update
-
-                        // Prepare for potential drag IF clicking on the (potentially new) selection
-                        if (editor.isPointOverSelection(mx, my)) { // Check again after selection update
-                            editorState.isDraggingSelection = true;
-                            editorState.dragStart = { x: mx, y: my };
-                            // Store original states of *all* selected items
-                            editorState.originalItemStates = editorState.selectedItems.map(item => {
-                                if (item.type === 'brick') {
-                                     const brick = gameState.bricks[item.index];
-                                     return brick ? utils.deepClone(brick) : null;
-                                }
-                                if (item.type === 'player') return utils.deepClone(gameState.player);
-                                if (item.type === 'hole') return utils.deepClone(gameState.hole);
-                                return null;
-                            }).filter(s => s !== null);
-                            // Save state *before* starting drag
-                            historyManager.saveState();
-                             canvas.style.cursor = 'move';
-                        }
-
-                    } else {
-                        // 3. Click on Empty Space: Start Marquee Selection or Deselect
-                        if (!ctrlPressed) {
-                            editorState.selectedItems = []; // Deselect all if not Ctrl clicking empty space
-                            uiManager.updateBrickPropertiesUI(); // Update properties panel
-                        }
-                        editorState.isMarqueeSelecting = true;
-                        editorState.marqueeStart = { x: mx, y: my };
-                        editorState.marqueeEnd = { x: mx, y: my };
-                        uiManager.updateMarqueeBox();
-                         canvas.style.cursor = 'crosshair';
-                    }
-                }
-                drawing.draw(); // Redraw to show selection changes
-
-            } else {
-                // --- Play Mode Mouse Down ---
-                if (gameState.ball.onPlayer) {
-                    editorState.aim.active = true;
-                    // Initial aim calculation (will be updated in mousemove)
-                    eventHandlers.updateAim(editorState.mouse.x, editorState.mouse.y);
-                    drawing.draw(); // Draw initial aim line
-                }
-            }
-        },
-
-        handleMouseMove: (e) => {
-            editorState.mouse.x = e.clientX;
-            editorState.mouse.y = e.clientY;
-            const mx = editorState.mouse.x;
-            const my = editorState.mouse.y;
-
-            if (gameState.mode === 'editor') {
-                // --- Editor Mode Mouse Move ---
-                if (editorState.mouse.down) {
-                    // --- Dragging Logic ---
-                    const dx = mx - editorState.dragStart.x;
-                    const dy = my - editorState.dragStart.y;
-
-                    if (editorState.draggingHandle) {
-                        // --- Handle Drag (Resize/Rotate) ---
-                        editorState.isDraggingSelection = false; // Not dragging items
-                        editorState.isMarqueeSelecting = false; // Not marquee selecting
-                        const handleType = editorState.draggingHandle.type;
-                        if (handleType === 'rotate') {
-                            editor.updateBrickDuringRotate(mx, my);
-                             canvas.style.cursor = 'grabbing';
-                        } else { // Resize handles
-                            editor.updateBrickDuringResize(handleType, mx, my);
-                            // Cursor style set on mousedown for resize
-                        }
-                        drawing.draw();
-
-                    } else if (editorState.isDraggingSelection) {
-                        // --- Item Drag ---
-                        editorState.isMarqueeSelecting = false; // Not marquee selecting
-                         canvas.style.cursor = 'move';
-                        editor.updateItemsDuringDrag(dx, dy);
-                        drawing.draw();
-
-                    } else if (editorState.isMarqueeSelecting) {
-                        // --- Marquee Selection Update ---
-                         canvas.style.cursor = 'crosshair';
-                        editorState.marqueeEnd = { x: mx, y: my };
-                        uiManager.updateMarqueeBox(); // Update visual marquee box
-                        // No need to redraw canvas for marquee
-                    }
-                } else {
-                    // --- Mouse Move (Not Dragging) ---
-                    // Update cursor style based on what's under the mouse
-                    uiManager.updateCursorStyle(mx, my);
-                }
-            } else {
-                // --- Play Mode Mouse Move ---
-                if (editorState.aim.active && gameState.ball.onPlayer) {
-                    // Update aiming line and potential velocity
-                    eventHandlers.updateAim(mx, my);
-                    drawing.draw(); // Redraw to show updated aim line
-                }
-            }
-        },
-
-        handleMouseUp: (e) => {
-            if (e.button !== 0 || !editorState.mouse.down) return; // Ignore if not left button or not dragging
-            editorState.mouse.down = false;
-
-            if (gameState.mode === 'editor') {
-                // --- Editor Mode Mouse Up ---
-
-                // 1. Finalize Drag/Resize/Rotate (Update initial positions and history)
-                editor.finalizeItemManipulation();
-
-                // 2. Finalize Marquee Selection
-                if (editorState.isMarqueeSelecting) {
-                    editor.finalizeMarqueeSelection(e.ctrlKey || e.metaKey);
-                }
-
-                // 3. Handle Simple Click (if not dragged significantly)
-                const dx = editorState.mouse.x - editorState.mouse.dragStartX;
-                const dy = editorState.mouse.y - editorState.mouse.dragStartY;
-                if (!editorState.draggingHandle && !editorState.isDraggingSelection && !editorState.isMarqueeSelecting) {
-                     if (Vec.lenSq({x: dx, y: dy}) < CLICK_THRESHOLD_SQ) {
-                        // This was likely a simple click, selection handled on mousedown
-                        // console.log("Simple click detected on mouseup.");
-                    }
-                }
-
-                // Reset interaction states
-                editor.resetSelectionAndDragging();
-                drawing.draw(); // Redraw to reflect final state/selection
-
-            } else {
-                // --- Play Mode Mouse Up ---
-                if (editorState.aim.active && gameState.ball.onPlayer) {
-                    gameLogic.fireBall(); // Attempt to fire the ball
-                    editorState.aim.active = false; // Deactivate aim after firing attempt
-                    drawing.draw(); // Redraw to remove aim line
-                }
-            }
-             // Reset cursor after any mouse up action
-            uiManager.updateCursorStyle(e.clientX, e.clientY);
-        },
-
-        handleKeyDown: (e) => {
-            if (gameState.mode !== 'editor') return; // Editor shortcuts only
-
-            // Ignore keydown if focus is on an input field (like rename prompt or property inputs)
-            const activeEl = document.activeElement;
-            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-                 // Allow arrow keys within number inputs, but block others like delete/backspace/ctrl+z etc.
-                 if (activeEl.type === 'number' && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)) {
-                     return; // Allow arrow navigation within number inputs
-                 }
-                 // Block most editor shortcuts if focus is on an input
-                 if (!(ctrlPressed && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'a' || e.key.toLowerCase() === 'x'))) { // Allow standard text editing shortcuts
-                    // return;
-                 }
-            }
-
-
-            const ctrlPressed = e.ctrlKey || e.metaKey; // Ctrl or Cmd
-
-            // --- Undo/Redo ---
-            if (ctrlPressed && e.key.toLowerCase() === 'z') {
-                e.preventDefault();
-                if (e.shiftKey) { // Ctrl+Shift+Z or Cmd+Shift+Z for Redo
-                    historyManager.redo();
-                } else { // Ctrl+Z or Cmd+Z for Undo
-                    historyManager.undo();
-                }
-                return; // Consume event
-            }
-            // Allow Ctrl+Y for Redo as well
-            if (ctrlPressed && e.key.toLowerCase() === 'y') {
-                e.preventDefault();
-                historyManager.redo();
-                return; // Consume event
-            }
-
-            // --- Copy/Paste ---
-            if (ctrlPressed && e.key.toLowerCase() === 'c') {
-                e.preventDefault();
-                editor.handleCopy();
-                return; // Consume event
-            }
-            if (ctrlPressed && e.key.toLowerCase() === 'v') {
-                e.preventDefault();
-                editor.handlePaste();
-                return; // Consume event
-            }
-
-            // --- Delete ---
-            if ((e.key === "Delete" || e.key === "Backspace") && editorState.selectedItems.length > 0) {
-                 // Prevent deleting if focus is inside an input field (already handled above, but double check)
-                 if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-                     return;
-                 }
-                e.preventDefault();
-                editor.deleteSelectedItems();
-                return; // Consume event
-            }
-
-            // --- Nudging ---
-            let dx = 0, dy = 0;
-            switch (e.key) {
-                case "ArrowUp": dy = -NUDGE_AMOUNT; break;
-                case "ArrowDown": dy = NUDGE_AMOUNT; break;
-                case "ArrowLeft": dx = -NUDGE_AMOUNT; break;
-                case "ArrowRight": dx = NUDGE_AMOUNT; break; // Corrected ArrowRight typo
-                default: return; // Not a nudge key
-            }
-
-            if (dx !== 0 || dy !== 0) {
-                e.preventDefault(); // Prevent page scrolling
-                editor.handleNudge(dx, dy);
-                // Note: history save is handled within handleNudge
-            }
-        },
-
-        handleKeyUp: (e) => {
-            if (gameState.mode !== 'editor') return;
-
-            // Reset nudge flag when an arrow key is released
-            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-                if (editorState.isNudging) {
-                    editorState.isNudging = false;
-                    // The final state after nudging is already saved in history.
-                    // We could potentially optimize history here if the net nudge was zero,
-                    // but the current approach is simpler.
-                }
-            }
-        },
-
-        // Helper to update aim vector based on mouse position
-        updateAim: (mx, my) => {
-            if (!gameState.ball.onPlayer) return;
-
-            const aimVecRaw = Vec.sub({ x: mx, y: my }, { x: gameState.ball.x, y: gameState.ball.y });
-            let aimPowerLength = Vec.len(aimVecRaw);
-
-            // Clamp visual line length and calculate power based on clamped length
-            aimPowerLength = Math.min(aimPowerLength, AIM_LINE_LENGTH);
-            const power = aimPowerLength / AIM_POWER_FACTOR; // Scale down length for power
-
-            const normAimVec = Vec.normalize(aimVecRaw);
-
-            // Calculate potential velocity
-            editorState.aim.dx = normAimVec.x * power;
-            editorState.aim.dy = normAimVec.y * power;
-
-            // Enforce minimum upward velocity
-            if (editorState.aim.dy > MIN_AIM_VY) {
-                editorState.aim.dy = MIN_AIM_VY;
-                // Optional: Recalculate dx to maintain direction if dy is clamped?
-                // Or just clamp dy? Let's just clamp dy for simplicity.
-            }
-        }
-    };
+    // --- Event Handlers --- (No Changes)
+    const eventHandlers = { handleResize: () => { utils.resizeCanvas(); }, handleContextMenu: (e) => { e.preventDefault(); uiManager.hideContextMenu(); if (gameState.mode !== 'editor' || uiManager.isPointerOverUI(e.clientX, e.clientY)) { return; } const mx = e.clientX; const my = e.clientY; let targetItem = editor.getItemAtPoint(mx, my); let targetType = 'empty'; let targetIndex = null; if (targetItem) { targetType = targetItem.type; targetIndex = targetItem.index; if (!editorState.selectedItems.some(sel => sel.type === targetType && sel.index === targetIndex)) { editorState.selectedItems = [targetItem]; uiManager.updateBrickPropertiesUI(); drawing.draw(); } } editorState.contextMenuTarget = { type: targetType, index: targetIndex, x: mx, y: my }; uiManager.showContextMenu(mx, my); }, handleMouseDown: (e) => { if (e.button !== 0 || uiManager.isPointerOverUI(e.clientX, e.clientY)) { return; } editorState.mouse.down = true; editorState.mouse.x = e.clientX; editorState.mouse.y = e.clientY; editorState.mouse.dragStartX = editorState.mouse.x; editorState.mouse.dragStartY = editorState.mouse.y; uiManager.hideContextMenu(); editor.resetSelectionAndDragging(); if (gameState.mode === 'editor') { const mx = editorState.mouse.x; const my = editorState.mouse.y; const ctrlPressed = e.ctrlKey || e.metaKey; const clickedHandle = editor.getHandleAtPoint(mx, my); if (clickedHandle) { editorState.draggingHandle = clickedHandle; editorState.dragStart = { x: mx, y: my }; historyManager.saveState(); canvas.style.cursor = clickedHandle.type === 'rotate' ? 'grabbing' : (clickedHandle.type === 'tl' || clickedHandle.type === 'br') ? 'nwse-resize' : 'nesw-resize'; } else { const clickedItem = editor.getItemAtPoint(mx, my); if (clickedItem) { const isClickOnSelection = editor.isPointOverSelection(mx, my); editor.selectItem(clickedItem, ctrlPressed); if (editor.isPointOverSelection(mx, my)) { editorState.isDraggingSelection = true; editorState.dragStart = { x: mx, y: my }; editorState.originalItemStates = editorState.selectedItems.map(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick ? utils.deepClone(brick) : null; } if (item.type === 'player') return utils.deepClone(gameState.player); if (item.type === 'hole') return utils.deepClone(gameState.hole); return null; }).filter(s => s !== null); historyManager.saveState(); canvas.style.cursor = 'move'; } } else { if (!ctrlPressed) { editorState.selectedItems = []; uiManager.updateBrickPropertiesUI(); } editorState.isMarqueeSelecting = true; editorState.marqueeStart = { x: mx, y: my }; editorState.marqueeEnd = { x: mx, y: my }; uiManager.updateMarqueeBox(); canvas.style.cursor = 'crosshair'; } } drawing.draw(); } else { if (gameState.ball.onPlayer) { editorState.aim.active = true; eventHandlers.updateAim(editorState.mouse.x, editorState.mouse.y); drawing.draw(); } } }, handleMouseMove: (e) => { editorState.mouse.x = e.clientX; editorState.mouse.y = e.clientY; const mx = editorState.mouse.x; const my = editorState.mouse.y; if (gameState.mode === 'editor') { if (editorState.mouse.down) { const dx = mx - editorState.dragStart.x; const dy = my - editorState.dragStart.y; if (editorState.draggingHandle) { editorState.isDraggingSelection = false; editorState.isMarqueeSelecting = false; const handleType = editorState.draggingHandle.type; if (handleType === 'rotate') { editor.updateBrickDuringRotate(mx, my); canvas.style.cursor = 'grabbing'; } else { editor.updateBrickDuringResize(handleType, mx, my); } drawing.draw(); } else if (editorState.isDraggingSelection) { editorState.isMarqueeSelecting = false; canvas.style.cursor = 'move'; editor.updateItemsDuringDrag(dx, dy); drawing.draw(); } else if (editorState.isMarqueeSelecting) { canvas.style.cursor = 'crosshair'; editorState.marqueeEnd = { x: mx, y: my }; uiManager.updateMarqueeBox(); } } else { uiManager.updateCursorStyle(mx, my); } } else { if (editorState.aim.active && gameState.ball.onPlayer) { eventHandlers.updateAim(mx, my); drawing.draw(); } } }, handleMouseUp: (e) => { if (e.button !== 0 || !editorState.mouse.down) return; editorState.mouse.down = false; if (gameState.mode === 'editor') { editor.finalizeItemManipulation(); if (editorState.isMarqueeSelecting) { editor.finalizeMarqueeSelection(e.ctrlKey || e.metaKey); } const dx = editorState.mouse.x - editorState.mouse.dragStartX; const dy = editorState.mouse.y - editorState.mouse.dragStartY; if (!editorState.draggingHandle && !editorState.isDraggingSelection && !editorState.isMarqueeSelecting) { if (Vec.lenSq({x: dx, y: dy}) < CLICK_THRESHOLD_SQ) { /* Simple click */ } } editor.resetSelectionAndDragging(); drawing.draw(); } else { if (editorState.aim.active && gameState.ball.onPlayer) { gameLogic.fireBall(); editorState.aim.active = false; drawing.draw(); } } uiManager.updateCursorStyle(e.clientX, e.clientY); }, handleKeyDown: (e) => { if (gameState.mode !== 'editor') return; const activeEl = document.activeElement; const isInputFocused = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA'); const ctrlPressed = e.ctrlKey || e.metaKey; if (isInputFocused) { if (activeEl.type === 'number' && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)) { return; } if (!(ctrlPressed && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'a' || e.key.toLowerCase() === 'x'))) { /* Block other shortcuts? Maybe only block delete/backspace/arrows? */ if (["Delete", "Backspace", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) { /* Allow text deletion/navigation within input */ } else if (ctrlPressed && e.key.toLowerCase() === 'z') { /* Allow undo/redo in inputs? Maybe not */ return; } else if (ctrlPressed && e.key.toLowerCase() === 'y') { return; } else if (!ctrlPressed && e.key.length === 1) { /* Allow typing */ } else { /* Block other potential editor shortcuts */ return; } } } if (ctrlPressed && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) { historyManager.redo(); } else { historyManager.undo(); } return; } if (ctrlPressed && e.key.toLowerCase() === 'y') { e.preventDefault(); historyManager.redo(); return; } if (ctrlPressed && e.key.toLowerCase() === 'c') { e.preventDefault(); editor.handleCopy(); return; } if (ctrlPressed && e.key.toLowerCase() === 'v') { e.preventDefault(); editor.handlePaste(); return; } if ((e.key === "Delete" || e.key === "Backspace") && editorState.selectedItems.length > 0 && !isInputFocused) { e.preventDefault(); editor.deleteSelectedItems(); return; } let dx = 0, dy = 0; switch (e.key) { case "ArrowUp": dy = -NUDGE_AMOUNT; break; case "ArrowDown": dy = NUDGE_AMOUNT; break; case "ArrowLeft": dx = -NUDGE_AMOUNT; break; case "ArrowRight": dx = NUDGE_AMOUNT; break; default: return; } if ((dx !== 0 || dy !== 0) && !isInputFocused) { e.preventDefault(); editor.handleNudge(dx, dy); } }, handleKeyUp: (e) => { if (gameState.mode !== 'editor') return; if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) { if (editorState.isNudging) { editorState.isNudging = false; } } }, updateAim: (mx, my) => { if (!gameState.ball.onPlayer) return; const aimVecRaw = Vec.sub({ x: mx, y: my }, { x: gameState.ball.x, y: gameState.ball.y }); let aimPowerLength = Vec.len(aimVecRaw); aimPowerLength = Math.min(aimPowerLength, AIM_LINE_LENGTH); const power = aimPowerLength / AIM_POWER_FACTOR; const normAimVec = Vec.normalize(aimVecRaw); editorState.aim.dx = normAimVec.x * power; editorState.aim.dy = normAimVec.y * power; if (editorState.aim.dy > MIN_AIM_VY) { editorState.aim.dy = MIN_AIM_VY; } } };
 
     // --- Game Loop ---
     let lastTimestamp = 0;
@@ -2587,7 +705,8 @@
     }
 
     // --- Initialization ---
-    function init() {
+    // *** MODIFIED: Now async to wait for level loading ***
+    async function init() {
         console.log("Initializing Playground Bounce...");
         // Setup Event Listeners
         window.addEventListener("resize", eventHandlers.handleResize);
@@ -2595,13 +714,11 @@
         canvas.addEventListener("mousedown", eventHandlers.handleMouseDown);
         canvas.addEventListener("mousemove", eventHandlers.handleMouseMove);
         canvas.addEventListener("mouseup", eventHandlers.handleMouseUp);
-        // Add mouseleave listener to cancel dragging/aiming if mouse leaves canvas
         canvas.addEventListener("mouseleave", () => {
             if (editorState.mouse.down) {
-                 // Simulate mouseup if dragging off canvas
                  eventHandlers.handleMouseUp({ button: 0, clientX: editorState.mouse.x, clientY: editorState.mouse.y });
             }
-            editorState.aim.active = false; // Cancel aim if mouse leaves
+            editorState.aim.active = false;
         });
         document.addEventListener("keydown", eventHandlers.handleKeyDown);
         document.addEventListener("keyup", eventHandlers.handleKeyUp);
@@ -2611,17 +728,18 @@
         editorButton.onclick = gameLogic.switchToEditorMode;
         showMenuButton.onclick = uiManager.showMenu;
 
-        // *** NEW: Setup Property Input Listeners ***
-        // Use 'input' for immediate feedback, 'change' might be better for performance/undo spam
+        // Setup Property Input Listeners
         propMoveRangeInput.addEventListener('input', editor.handlePropertyChange);
         propMoveSpeedInput.addEventListener('input', editor.handlePropertyChange);
 
 
-        // Load data and set initial state
-        levelManager.loadLevelsFromStorage(); // Loads levels and sets currentLevelIndex
-        utils.resizeCanvas(); // Initial resize to set canvas size and load level 0 data
-        levelManager.populateLevelList(); // Populate UI list
-        gameLogic.switchToEditorMode(); // Start in editor mode by default
+        // Load data (awaiting the async function)
+        await levelManager.loadLevelsFromStorage(); // Wait for levels to load from storage or fetch
+
+        // Set initial state based on loaded levels
+        utils.resizeCanvas(); // Initial resize sets canvas size and calls loadLevelData for index 0
+        // populateLevelList is called within loadLevelsFromStorage
+        gameLogic.switchToEditorMode(); // Start in editor mode
         uiManager.showMenu(); // Show menu initially
 
         // Start the game loop
