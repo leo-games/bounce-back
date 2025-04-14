@@ -174,16 +174,33 @@
     const startGameButton = document.getElementById("startGameButton");
 
 
-    // --- Game Constants ---
-    const PLAYER_WIDTH = 40;
-    const PLAYER_HEIGHT = 10;
-    const PLAYER_HEAD_RADIUS = 10;
-    const BALL_RADIUS = 10;
-    const HOLE_RADIUS = 15;
-    const AIM_LINE_LENGTH = 100;
-    const AIM_POWER_FACTOR = 10.0;
-    const AIM_VISUAL_SCALE = 5;
-    const MIN_AIM_VY = -0.1;
+    // --- Base Game Constants (Unscaled) --- *** MODIFIED: Renamed and added BASE_ ***
+    const BASE_PLAYER_WIDTH = 40;
+    const BASE_PLAYER_HEIGHT = 10;
+    const BASE_PLAYER_HEAD_RADIUS = 10;
+    const BASE_BALL_RADIUS = 10;
+    const BASE_HOLE_RADIUS = 15;
+    const BASE_AIM_LINE_LENGTH = 100;
+    const AIM_POWER_FACTOR = 10.0; // Might not need scaling
+    const AIM_VISUAL_SCALE = 5; // Might not need scaling
+    const MIN_AIM_VY = -0.1; // Might not need scaling
+    const BASE_HANDLE_SIZE = 5;
+    const BASE_ROTATE_HANDLE_OFFSET = 20;
+    const ROTATE_HANDLE_SIZE_FACTOR = 1.2; // Relative factor, no scaling needed
+    const BASE_MIN_BRICK_DIMENSION = 10;
+    const COLLISION_PUSH_FACTOR = 1.01; // Physics factor, no scaling needed
+    const BASE_PLAYER_DEFAULT_BOTTOM_OFFSET = 60;
+    const BASE_HOLE_DEFAULT_Y = 100; // Base Y position at design resolution
+    const BASE_BALL_OUTLINE_WIDTH = 2;
+    const NUDGE_AMOUNT = 1; // Nudge amount in screen pixels, no scaling needed
+    const PASTE_OFFSET = 15; // Offset in screen pixels, no scaling needed
+    const MAX_HISTORY = 50;
+    const MESSAGE_DISPLAY_TIME = 1500;
+    const BASE_DEFAULT_MOVE_RANGE = 50;
+    const DEFAULT_MOVE_SPEED = 1.0; // Speed likely shouldn't scale
+    const CLICK_THRESHOLD_SQ = 9; // Click threshold in screen pixels, no scaling needed
+
+    // --- Colors --- (No scaling needed)
     const BRICK_COLOR = "#6B7280";
     const BRICK_STROKE_COLOR = "#1F2937";
     const KILL_BRICK_COLOR = "#EF4444";
@@ -192,57 +209,54 @@
     const SELECTED_BRICK_COLOR = "#3B82F6";
     const SELECTED_ITEM_OUTLINE_COLOR = "#F59E0B";
     const HANDLE_COLOR = "#F59E0B";
-    const HANDLE_SIZE = 5;
-    const ROTATE_HANDLE_OFFSET = 20;
-    const ROTATE_HANDLE_SIZE_FACTOR = 1.2;
-    const MIN_BRICK_DIMENSION = 10;
-    const COLLISION_PUSH_FACTOR = 1.01;
-    const PLAYER_DEFAULT_BOTTOM_OFFSET = 60;
-    const HOLE_DEFAULT_Y = 100;
-    const BALL_OUTLINE_WIDTH = 2;
-    const NUDGE_AMOUNT = 1;
-    const PASTE_OFFSET = 15;
-    const MAX_HISTORY = 50;
-    const MESSAGE_DISPLAY_TIME = 1500;
-    const DEFAULT_MOVE_RANGE = 50;
-    const DEFAULT_MOVE_SPEED = 1.0;
-    const CLICK_THRESHOLD_SQ = 9;
     const MOVER_RANGE_INDICATOR_COLOR = "rgba(100, 100, 255, 0.5)";
-    const MOVER_RANGE_INDICATOR_WIDTH = 2;
+    const MOVER_RANGE_INDICATOR_WIDTH = 2; // Fixed line width
+
+    // --- Default Files & Fallback Size ---
     const DEFAULT_LEVEL_FILES = [
         './data/levels/Level_1.json',
-        './data/levels/Level_2.json',
-        './data/levels/Level_3.json',
-        './data/levels/Level_4.json' // Assuming you have this file
+        './data/levels/Level_2.json'
     ];
-    const FALLBACK_CANVAS_WIDTH = 800;
+    const FALLBACK_CANVAS_WIDTH = 800; // Design resolution for fallback
     const FALLBACK_CANVAS_HEIGHT = 600;
 
 
     // --- Game State Variables ---
     let gameState = {
-        player: { x: 0, y: 0, width: PLAYER_WIDTH, height: PLAYER_HEIGHT },
-        ball: { x: 0, y: 0, radius: BALL_RADIUS, vx: 0, vy: 0, fired: false, onPlayer: true },
-        hole: { x: 0, y: 0, radius: HOLE_RADIUS },
-        bricks: [],
+        // *** MODIFIED: Store scaled values, calculated on load/resize ***
+        player: { x: 0, y: 0, width: 0, height: 0, headRadius: 0 }, // Scaled values
+        ball: { x: 0, y: 0, radius: 0, vx: 0, vy: 0, fired: false, onPlayer: true }, // Scaled radius
+        hole: { x: 0, y: 0, radius: 0 }, // Scaled radius
+        bricks: [], // Will store scaled x, y, width, height, initialX/Y, moveRange
         currentLevelIndex: 0,
         mode: 'editor',
+        // *** ADDED: Store current scaling factors for saving ***
+        lastScaleX: 1,
+        lastScaleY: 1,
+        lastScaleMin: 1,
+        // *** ADDED: Store scaled constants for runtime use ***
+        scaledPlayerBottomOffset: 0,
+        scaledMinBrickDimension: 0,
+        scaledHandleSize: 0,
+        scaledRotateHandleOffset: 0,
+        scaledAimLineLength: 0,
+        scaledBallOutlineWidth: 0,
     };
 
-    // --- Editor State Variables ---
+    // --- Editor State Variables (No changes needed here for scaling) ---
     let editorState = {
         selectedItems: [],
         draggingHandle: null,
         dragStart: { x: 0, y: 0 },
-        originalItemStates: [],
+        originalItemStates: [], // Stores state of items *at start of drag* (already scaled)
         mouse: { x: 0, y: 0, down: false, dragStartX: 0, dragStartY: 0 },
         aim: { dx: 0, dy: 0, active: false },
         isMarqueeSelecting: false,
         marqueeStart: { x: 0, y: 0 },
         marqueeEnd: { x: 0, y: 0 },
         isDraggingSelection: false,
-        clipboard: [],
-        history: [],
+        clipboard: [], // Stores unscaled brick data
+        history: [], // Stores snapshots of gameState (which contains scaled values)
         historyIndex: -1,
         isNudging: false,
         contextMenuTarget: null,
@@ -251,8 +265,8 @@
 
     // --- Level Data ---
     let levelManager = {
-        levels: [],
-        storageKey: 'bounceBackLevels_v2',
+        levels: [], // Stores level data with *unscaled* dimensions/ranges
+        storageKey: 'bounceBackLevels_v3', // *** MODIFIED: Version bump for new structure ***
 
         loadLevelsFromStorage: async function() {
             const storedLevels = localStorage.getItem(this.storageKey);
@@ -260,12 +274,13 @@
             if (storedLevels) {
                 try {
                     const parsedLevels = JSON.parse(storedLevels);
-                    if (Array.isArray(parsedLevels) && parsedLevels.length > 0 && typeof parsedLevels[0] === 'object' && parsedLevels[0].bricks && parsedLevels[0].player && parsedLevels[0].hole) {
+                    // Basic structure check (can be enhanced)
+                    if (Array.isArray(parsedLevels) && parsedLevels.length > 0 && typeof parsedLevels[0] === 'object' && parsedLevels[0].bricks && parsedLevels[0].player && parsedLevels[0].hole && parsedLevels[0].savedCanvasWidth) {
                         this.levels = parsedLevels;
                         this.levels.forEach((lvl, index) => this._validateAndDefaultLevel(lvl, index));
                         loadedFromStorage = true;
                         console.log("Loaded levels from localStorage.");
-                    } else { console.warn("Invalid level structure in localStorage."); }
+                    } else { console.warn("Invalid level structure in localStorage v3."); }
                 } catch (e) { console.error("Failed to parse levels from localStorage:", e); uiManager.showMessage("Error loading saved levels. Loading defaults.", 3000); this.levels = []; }
             }
             if (!loadedFromStorage) {
@@ -279,7 +294,7 @@
                         this.levels = fetchedLevelData;
                         this.levels.forEach((lvl, index) => this._validateAndDefaultLevel(lvl, index));
                         console.log(`Successfully fetched and validated ${this.levels.length} default levels.`);
-                        this.saveLevelsToStorage();
+                        this.saveLevelsToStorage(); // Save validated/defaulted fetched levels
                     } else { throw new Error("Fetched default level data was empty."); }
                 } catch (fetchError) {
                     console.error("Failed to fetch or process default levels:", fetchError);
@@ -291,30 +306,59 @@
             gameState.currentLevelIndex = 0;
             this.populateLevelList();
         },
-        saveLevelsToStorage: function() { try { localStorage.setItem(this.storageKey, JSON.stringify(this.levels)); console.log("Saved levels to localStorage."); } catch (e) { console.error("Failed to save levels to localStorage:", e); uiManager.showMessage("Error saving levels. Storage might be full.", 3000); } },
+        saveLevelsToStorage: function() {
+             try {
+                 // Ensure we are saving the unscaled data structure
+                 const levelsToSave = utils.deepClone(this.levels); // Clone to avoid modifying the in-memory version
+                 levelsToSave.forEach(level => {
+                     // Double check structure before saving? Optional.
+                     if (!level.bricks || !level.player || !level.hole || !level.savedCanvasWidth) {
+                         console.warn("Attempting to save incomplete level structure:", level);
+                     }
+                 });
+                 localStorage.setItem(this.storageKey, JSON.stringify(levelsToSave));
+                 console.log("Saved levels to localStorage.");
+             } catch (e) {
+                 console.error("Failed to save levels to localStorage:", e);
+                 uiManager.showMessage("Error saving levels. Storage might be full.", 3000);
+             }
+        },
 
+        // *** MODIFIED: Validates unscaled structure ***
         _validateAndDefaultLevel: function(lvl, index) {
-            const defaultLvl = this._createDefaultLevelData(index);
-            if (typeof lvl !== 'object' || lvl === null) return;
+            const defaultLvl = this._createDefaultLevelData(index); // Gets unscaled defaults
+            if (typeof lvl !== 'object' || lvl === null) return; // Should not happen if called after basic check
+
             lvl.name = lvl.name || `Level ${index + 1}`;
+            // Ensure reference size exists
             lvl.savedCanvasWidth = lvl.savedCanvasWidth || defaultLvl.savedCanvasWidth;
             lvl.savedCanvasHeight = lvl.savedCanvasHeight || defaultLvl.savedCanvasHeight;
+
+            // Validate player (only needs x, y in saved data)
             lvl.player = lvl.player || defaultLvl.player;
-            if (lvl.player && (lvl.player.x === undefined || lvl.player.y === undefined)) { lvl.player = defaultLvl.player; }
+            if (lvl.player.x === undefined || lvl.player.y === undefined) { lvl.player = defaultLvl.player; }
+
+            // Validate hole (only needs x, y in saved data)
             lvl.hole = lvl.hole || defaultLvl.hole;
-            if (lvl.hole && (lvl.hole.x === undefined || lvl.hole.y === undefined)) { lvl.hole = defaultLvl.hole; }
+            if (lvl.hole.x === undefined || lvl.hole.y === undefined) { lvl.hole = defaultLvl.hole; }
+
+            // Validate bricks (check for unscaled properties)
             lvl.bricks = Array.isArray(lvl.bricks) ? lvl.bricks : defaultLvl.bricks;
             lvl.bricks.forEach(brick => {
                 if (typeof brick !== 'object' || brick === null) return;
                 brick.isKillBrick = brick.isKillBrick || false;
                 brick.movementType = brick.movementType || null;
-                brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE;
+                brick.moveRange = brick.moveRange ?? BASE_DEFAULT_MOVE_RANGE; // Base unscaled range
                 brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED;
                 brick.angle = brick.angle || 0;
+                // Base position relative to fallback size if missing
                 brick.x = brick.x ?? (FALLBACK_CANVAS_WIDTH / 2 - 50);
                 brick.y = brick.y ?? (FALLBACK_CANVAS_HEIGHT / 2);
-                brick.width = brick.width ?? 100;
-                brick.height = brick.height ?? 20;
+                // Base unscaled dimensions
+                brick.width = brick.width ?? 100; // Default unscaled width
+                brick.height = brick.height ?? 20; // Default unscaled height
+
+                // Ensure initial positions exist for movers (relative to saved size)
                 if (brick.movementType && (brick.initialX === undefined || brick.initialY === undefined)) {
                     brick.initialX = brick.x;
                     brick.initialY = brick.y;
@@ -322,13 +366,15 @@
             });
         },
 
+        // *** MODIFIED: Creates default level with unscaled base values ***
         _createDefaultLevelData: function(levelIndex = 0) {
-            console.log("Creating fallback default level data.");
+            console.log("Creating fallback default level data (unscaled).");
             const fallbackWidth = FALLBACK_CANVAS_WIDTH;
             const fallbackHeight = FALLBACK_CANVAS_HEIGHT;
             const centerX = fallbackWidth / 2;
+            // Define bricks with unscaled dimensions and positions relative to fallback size
             const fallbackBricks = [
-                { x: centerX - 150, y: 300, width: 200, height: 15, angle: -Math.PI / 16, isKillBrick: false, movementType: null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED },
+                { x: centerX - 150, y: 300, width: 200, height: 15, angle: -Math.PI / 16, isKillBrick: false, movementType: null, moveRange: BASE_DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED },
                 { x: centerX - 50, y: 180, width: 100, height: 15, angle: 0, isKillBrick: false, movementType: 'horizontal', moveRange: 80, moveSpeed: 1.5, initialX: centerX - 50, initialY: 180 },
                 { x: centerX + 150 - (15/2), y: 250, width: 15, height: 80, angle: 0, isKillBrick: true, movementType: 'vertical', moveRange: 40, moveSpeed: 0.8, initialX: centerX + 150 - (15/2), initialY: 250 }
             ];
@@ -336,12 +382,13 @@
                 name: `Fallback Level ${levelIndex + 1}`,
                 savedCanvasWidth: fallbackWidth,
                 savedCanvasHeight: fallbackHeight,
-                bricks: fallbackBricks,
-                player: { x: centerX - (PLAYER_WIDTH / 2), y: fallbackHeight - PLAYER_DEFAULT_BOTTOM_OFFSET },
-                hole: { x: centerX, y: HOLE_DEFAULT_Y }
+                bricks: fallbackBricks, // Unscaled brick data
+                player: { x: centerX - (BASE_PLAYER_WIDTH / 2), y: fallbackHeight - BASE_PLAYER_DEFAULT_BOTTOM_OFFSET }, // Unscaled position
+                hole: { x: centerX, y: BASE_HOLE_DEFAULT_Y } // Unscaled position
             };
         },
 
+        // *** MODIFIED: Applies scaling to all elements and stores in gameState ***
         loadLevelData: function(index) {
             if (index < 0 || index >= this.levels.length) {
                 console.error("Attempted to load invalid level index:", index);
@@ -350,6 +397,7 @@
                     this.levels.push(this._createDefaultLevelData(0));
                 }
             }
+            // Get the stored level data (contains unscaled dimensions/ranges)
             const levelData = this.levels[index];
             if (typeof levelData !== 'object' || levelData === null || !Array.isArray(levelData.bricks) || !levelData.player || !levelData.hole) {
                 console.error("Invalid level data structure at index:", index, levelData);
@@ -357,61 +405,110 @@
                 return;
             }
 
-            const savedWidth = levelData.savedCanvasWidth || canvas.width;
-            const savedHeight = levelData.savedCanvasHeight || canvas.height;
+            // --- Scaling Calculation ---
+            const referenceWidth = levelData.savedCanvasWidth || FALLBACK_CANVAS_WIDTH; // Use fallback if missing
+            const referenceHeight = levelData.savedCanvasHeight || FALLBACK_CANVAS_HEIGHT;
             const currentWidth = canvas.width;
             const currentHeight = canvas.height;
 
-            const scaleX = (savedWidth > 0) ? currentWidth / savedWidth : 1;
-            const scaleY = (savedHeight > 0) ? currentHeight / savedHeight : 1;
+            const scaleX = (referenceWidth > 0) ? currentWidth / referenceWidth : 1;
+            const scaleY = (referenceHeight > 0) ? currentHeight / referenceHeight : 1;
+            const scaleMin = Math.min(scaleX, scaleY); // For uniform scaling (radii, etc.)
 
+            // Store current scales for potential use during saving/editing
+            gameState.lastScaleX = scaleX;
+            gameState.lastScaleY = scaleY;
+            gameState.lastScaleMin = scaleMin;
+            // --- End Scaling Calculation ---
+
+            // --- Apply Scaling and Update gameState ---
+
+            // Scale runtime constants
+            gameState.scaledPlayerBottomOffset = BASE_PLAYER_DEFAULT_BOTTOM_OFFSET * scaleY;
+            gameState.scaledMinBrickDimension = BASE_MIN_BRICK_DIMENSION * scaleMin;
+            gameState.scaledHandleSize = BASE_HANDLE_SIZE * scaleMin;
+            gameState.scaledRotateHandleOffset = BASE_ROTATE_HANDLE_OFFSET * scaleMin;
+            gameState.scaledAimLineLength = BASE_AIM_LINE_LENGTH * scaleMin; // Scale aim line length
+            gameState.scaledBallOutlineWidth = BASE_BALL_OUTLINE_WIDTH * scaleMin; // Scale outline width
+
+            // Load and scale bricks into gameState.bricks
             gameState.bricks = levelData.bricks.map(brickData => {
                 if (typeof brickData !== 'object' || brickData === null) {
                     console.warn("Skipping invalid brick data during load:", brickData);
                     return null;
                 }
-                const scaledX = (brickData.x || 0) * scaleX;
-                const scaledY = (brickData.y || 0) * scaleY;
-                const scaledWidth = (brickData.width || 100) * scaleX;
-                const scaledHeight = (brickData.height || 20) * scaleY;
-                let scaledMoveRange = brickData.moveRange ?? DEFAULT_MOVE_RANGE;
-                let scaledInitialX = brickData.initialX !== undefined ? brickData.initialX * scaleX : scaledX;
-                let scaledInitialY = brickData.initialY !== undefined ? brickData.initialY * scaleY : scaledY;
+                // Load unscaled data
+                const unscaledX = brickData.x || 0;
+                const unscaledY = brickData.y || 0;
+                const unscaledWidth = brickData.width || 100;
+                const unscaledHeight = brickData.height || 20;
+                const unscaledInitialX = brickData.initialX !== undefined ? brickData.initialX : unscaledX;
+                const unscaledInitialY = brickData.initialY !== undefined ? brickData.initialY : unscaledY;
+                const unscaledMoveRange = brickData.moveRange ?? BASE_DEFAULT_MOVE_RANGE;
 
+                // Calculate scaled values
+                const scaledX = unscaledX * scaleX;
+                const scaledY = unscaledY * scaleY;
+                const scaledWidth = Math.max(gameState.scaledMinBrickDimension, unscaledWidth * scaleX); // Apply min dim
+                const scaledHeight = Math.max(gameState.scaledMinBrickDimension, unscaledHeight * scaleY); // Apply min dim
+                const scaledInitialX = unscaledInitialX * scaleX;
+                const scaledInitialY = unscaledInitialY * scaleY;
+                let scaledMoveRange = unscaledMoveRange;
                 if (brickData.movementType === 'horizontal') {
                     scaledMoveRange *= scaleX;
                 } else if (brickData.movementType === 'vertical') {
                     scaledMoveRange *= scaleY;
                 }
 
+                // Return object with *scaled* values for gameState
                 return {
-                    ...brickData,
+                    // Copy non-scaled properties
+                    angle: brickData.angle || 0,
+                    isKillBrick: brickData.isKillBrick || false,
+                    movementType: brickData.movementType || null,
+                    moveSpeed: brickData.moveSpeed ?? DEFAULT_MOVE_SPEED, // Speed not scaled
+                    // Store scaled values
                     x: scaledX,
                     y: scaledY,
-                    width: Math.max(MIN_BRICK_DIMENSION, scaledWidth),
-                    height: Math.max(MIN_BRICK_DIMENSION, scaledHeight),
+                    width: scaledWidth,
+                    height: scaledHeight,
                     initialX: scaledInitialX,
                     initialY: scaledInitialY,
                     moveRange: scaledMoveRange,
+                    // *** ADDED: Store unscaled base dimensions for reference during resize/save ***
+                    baseWidth: unscaledWidth,
+                    baseHeight: unscaledHeight,
                 };
             }).filter(brick => brick !== null);
 
+            // Load and scale player into gameState.player
             const savedPlayer = levelData.player;
-            gameState.player.x = (savedPlayer.x || (savedWidth / 2 - PLAYER_WIDTH / 2)) * scaleX;
-            gameState.player.y = (savedPlayer.y || (savedHeight - PLAYER_DEFAULT_BOTTOM_OFFSET)) * scaleY;
+            gameState.player.x = (savedPlayer.x || referenceWidth / 2) * scaleX; // Center if missing
+            gameState.player.y = (savedPlayer.y || referenceHeight - BASE_PLAYER_DEFAULT_BOTTOM_OFFSET) * scaleY;
+            gameState.player.width = BASE_PLAYER_WIDTH * scaleX;
+            gameState.player.height = BASE_PLAYER_HEIGHT * scaleY; // Scale height too
+            gameState.player.headRadius = BASE_PLAYER_HEAD_RADIUS * scaleMin;
 
+            // Load and scale hole into gameState.hole
             const savedHole = levelData.hole;
-            gameState.hole.x = (savedHole.x || savedWidth / 2) * scaleX;
-            gameState.hole.y = (savedHole.y || HOLE_DEFAULT_Y) * scaleY;
+            gameState.hole.x = (savedHole.x || referenceWidth / 2) * scaleX;
+            gameState.hole.y = (savedHole.y || BASE_HOLE_DEFAULT_Y) * scaleY; // Scale default Y too
+            gameState.hole.radius = BASE_HOLE_RADIUS * scaleMin;
 
+            // Load and scale ball into gameState.ball
+            // Ball position is reset based on player, just scale radius
+            gameState.ball.radius = BASE_BALL_RADIUS * scaleMin;
+
+            // --- Update UI and Reset ---
             gameState.currentLevelIndex = index;
             uiManager.updateLevelDisplays();
-            gameLogic.resetBall();
+            gameLogic.resetBall(); // Reset ball position based on new scaled player position/size
             editor.resetSelectionAndHistory();
-            historyManager.saveState(true);
-            uiManager.updateBrickPropertiesUI();
+            historyManager.saveState(true); // Save the initial scaled state
+            uiManager.updateBrickPropertiesUI(); // Update properties based on scaled values
         },
 
+        // *** MODIFIED: Saves unscaled data by reversing the scaling ***
         saveCurrentLevel: function() {
             if (gameState.mode !== 'editor') return;
             const index = gameState.currentLevelIndex;
@@ -421,49 +518,74 @@
                 return;
             }
 
+            // Get the level data object we will save into
             const levelData = this.levels[index];
 
-            levelData.savedCanvasWidth = canvas.width;
-            levelData.savedCanvasHeight = canvas.height;
+            // Store current canvas dimensions as the new reference size
+            const currentWidth = canvas.width;
+            const currentHeight = canvas.height;
+            levelData.savedCanvasWidth = currentWidth;
+            levelData.savedCanvasHeight = currentHeight;
 
+            // Use the scaling factors that were active when the current gameState was loaded/calculated
+            const lastScaleX = gameState.lastScaleX || 1;
+            const lastScaleY = gameState.lastScaleY || 1;
+
+            // Store unscaled brick data
             levelData.bricks = gameState.bricks.map(brick => {
-                const savedX = brick.initialX !== undefined ? brick.initialX : brick.x;
-                const savedY = brick.initialY !== undefined ? brick.initialY : brick.y;
-                const originalSavedWidth = levelData.savedCanvasWidth || canvas.width;
-                const originalSavedHeight = levelData.savedCanvasHeight || canvas.height;
-                const loadScaleX = (originalSavedWidth > 0) ? canvas.width / originalSavedWidth : 1;
-                const loadScaleY = (originalSavedHeight > 0) ? canvas.height / originalSavedHeight : 1;
+                // Current scaled values from gameState
+                const scaledX = brick.initialX !== undefined ? brick.initialX : brick.x;
+                const scaledY = brick.initialY !== undefined ? brick.initialY : brick.y;
+                const scaledWidth = brick.width;
+                const scaledHeight = brick.height;
+                const scaledMoveRange = brick.moveRange;
 
-                let savedMoveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE;
-                if (brick.movementType === 'horizontal' && loadScaleX !== 0) {
-                    savedMoveRange /= loadScaleX;
-                } else if (brick.movementType === 'vertical' && loadScaleY !== 0) {
-                    savedMoveRange /= loadScaleY;
+                // Calculate unscaled values by reversing the last applied scaling
+                const unscaledX = scaledX / lastScaleX;
+                const unscaledY = scaledY / lastScaleY;
+                // Use baseWidth/Height if available (updated by resize handles), otherwise unscale current
+                const unscaledWidth = brick.baseWidth !== undefined ? brick.baseWidth : scaledWidth / lastScaleX;
+                const unscaledHeight = brick.baseHeight !== undefined ? brick.baseHeight : scaledHeight / lastScaleY;
+
+                let unscaledMoveRange = scaledMoveRange;
+                if (brick.movementType === 'horizontal' && lastScaleX !== 0) {
+                    unscaledMoveRange /= lastScaleX;
+                } else if (brick.movementType === 'vertical' && lastScaleY !== 0) {
+                    unscaledMoveRange /= lastScaleY;
                 }
 
+                // Return object with *unscaled* values for storage
                 return {
-                    x: savedX,
-                    y: savedY,
-                    width: brick.width,
-                    height: brick.height,
+                    // Non-scaled properties
                     angle: brick.angle || 0,
                     isKillBrick: brick.isKillBrick || false,
                     movementType: brick.movementType || null,
-                    moveRange: savedMoveRange,
                     moveSpeed: brick.moveSpeed ?? DEFAULT_MOVE_SPEED,
-                    initialX: brick.initialX,
-                    initialY: brick.initialY,
+                    // Unscaled values
+                    x: unscaledX,
+                    y: unscaledY,
+                    width: unscaledWidth,
+                    height: unscaledHeight,
+                    moveRange: unscaledMoveRange,
+                    initialX: brick.initialX !== undefined ? brick.initialX / lastScaleX : undefined, // Unscale initial pos too
+                    initialY: brick.initialY !== undefined ? brick.initialY / lastScaleY : undefined,
                 };
             });
 
-            levelData.player = { x: gameState.player.x, y: gameState.player.y };
-            levelData.hole = { x: gameState.hole.x, y: gameState.hole.y };
+            // Store unscaled player and hole positions
+            levelData.player = {
+                x: gameState.player.x / lastScaleX,
+                y: gameState.player.y / lastScaleY
+            };
+            levelData.hole = {
+                x: gameState.hole.x / lastScaleX,
+                y: gameState.hole.y / lastScaleY
+            };
 
-            this.saveLevelsToStorage();
+            this.saveLevelsToStorage(); // Save the updated this.levels array
             uiManager.showMessage(`Level ${index + 1} ('${levelData.name}') saved!`, 1500);
             this.populateLevelList();
         },
-        // *** MODIFIED: Added console log to dblclick handler ***
         populateLevelList: function() {
             levelListElement.innerHTML = '';
             if (!Array.isArray(this.levels)) {
@@ -489,7 +611,7 @@
                 nameSpan.textContent = levelData.name || `Level ${index + 1}`;
                 nameSpan.title = "Double-click to rename";
                 nameSpan.ondblclick = (e) => {
-                    console.log(`[Rename Debug] Double-click detected on level index: ${index}`); // *** ADDED LOG ***
+                    console.log(`[Rename Debug] Double-click detected on level index: ${index}`);
                     e.stopPropagation();
                     this.renameLevel(index);
                 };
@@ -507,59 +629,65 @@
         },
         selectLevelToEdit: function(index) {
             if (index >= 0 && index < this.levels.length) {
-                this.loadLevelData(index);
+                this.loadLevelData(index); // This now handles scaling
                 this.populateLevelList();
                 if (gameState.mode === 'play') {
-                    gameLogic.startGame();
+                    // gameLogic.startGame() is implicitly called via loadLevelData -> resetBall -> resetSelection -> etc.
+                    // We just need to ensure the mode is correct and UI updated
+                    gameState.mode = 'play';
+                    uiManager.updateUIForMode();
+                    drawing.draw(); // Explicit redraw after mode change
                 } else {
-                    drawing.draw();
+                    gameState.mode = 'editor';
+                    uiManager.updateUIForMode();
+                    drawing.draw(); // Just redraw if already in editor
                 }
             } else {
                 console.error("Invalid level index selected:", index);
             }
         },
-        // *** MODIFIED: Added console logs to renameLevel ***
         renameLevel: function(index) {
-            console.log(`[Rename Debug] renameLevel called for index: ${index}`); // *** ADDED LOG ***
+            console.log(`[Rename Debug] renameLevel called for index: ${index}`);
             if (index < 0 || index >= this.levels.length) {
-                 console.log("[Rename Debug] Invalid index, exiting renameLevel."); // *** ADDED LOG ***
+                 console.log("[Rename Debug] Invalid index, exiting renameLevel.");
                  return;
             }
             const currentName = this.levels[index].name || `Level ${index + 1}`;
             const newName = prompt(`Enter new name for "${currentName}":`, currentName);
-            console.log(`[Rename Debug] Prompt returned: ${newName}`); // *** ADDED LOG ***
+            console.log(`[Rename Debug] Prompt returned: ${newName}`);
 
             if (newName === null) {
-                 console.log("[Rename Debug] User cancelled prompt."); // *** ADDED LOG ***
-                 return; // User cancelled
+                 console.log("[Rename Debug] User cancelled prompt.");
+                 return;
             }
             const trimmedName = newName.trim();
             if (trimmedName === '') {
-                console.log("[Rename Debug] Trimmed name is empty."); // *** ADDED LOG ***
+                console.log("[Rename Debug] Trimmed name is empty.");
                 uiManager.showMessage("Level name cannot be empty.", 2000);
                 return;
             }
             if (trimmedName !== currentName) {
-                console.log(`[Rename Debug] Attempting to rename to: "${trimmedName}"`); // *** ADDED LOG ***
-                this.levels[index].name = trimmedName;
-                console.log("[Rename Debug] Name updated in memory. Saving..."); // *** ADDED LOG ***
-                this.saveLevelsToStorage();
-                console.log("[Rename Debug] Saved. Repopulating list..."); // *** ADDED LOG ***
-                this.populateLevelList();
-                console.log("[Rename Debug] List repopulated."); // *** ADDED LOG ***
+                console.log(`[Rename Debug] Attempting to rename to: "${trimmedName}"`);
+                this.levels[index].name = trimmedName; // Update name in the unscaled data store
+                console.log("[Rename Debug] Name updated in memory. Saving...");
+                this.saveLevelsToStorage(); // Save the updated levels array
+                console.log("[Rename Debug] Saved. Repopulating list...");
+                this.populateLevelList(); // Refresh UI list
+                console.log("[Rename Debug] List repopulated.");
                 uiManager.showMessage(`Level ${index + 1} renamed to "${trimmedName}"`, 1500);
             } else {
-                 console.log("[Rename Debug] New name is the same as the old name."); // *** ADDED LOG ***
+                 console.log("[Rename Debug] New name is the same as the old name.");
             }
         },
         addNew: function() {
             historyManager.saveState();
-            const newLevelData = this._createDefaultLevelData(this.levels.length);
+            const newLevelData = this._createDefaultLevelData(this.levels.length); // Creates unscaled data
+            // Set the saved size to the *current* canvas size for new levels
             newLevelData.savedCanvasWidth = canvas.width;
             newLevelData.savedCanvasHeight = canvas.height;
-            this.levels.push(newLevelData);
-            this.saveLevelsToStorage();
-            this.selectLevelToEdit(this.levels.length - 1);
+            this.levels.push(newLevelData); // Add unscaled data to the manager
+            this.saveLevelsToStorage(); // Save the new unscaled level list
+            this.selectLevelToEdit(this.levels.length - 1); // Load the new level (will scale it)
             uiManager.showMessage(`Added new Level ${this.levels.length}`, 1500);
         },
         deleteSelected: function() {
@@ -570,10 +698,10 @@
             }
             if (confirm(`Are you sure you want to delete Level ${index + 1} ('${this.levels[index].name}')? This cannot be undone.`)) {
                 historyManager.saveState();
-                this.levels.splice(index, 1);
-                this.saveLevelsToStorage();
+                this.levels.splice(index, 1); // Remove from unscaled data store
+                this.saveLevelsToStorage(); // Save updated list
                 const newIndex = Math.max(0, index - 1);
-                this.selectLevelToEdit(newIndex);
+                this.selectLevelToEdit(newIndex); // Load previous/first level
                 uiManager.showMessage(`Deleted Level ${index + 1}`, 1500);
             }
         },
@@ -600,10 +728,12 @@
                 return;
             }
             try {
+                // Ensure the current state is saved (unscaled) before exporting
                 if (gameState.mode === 'editor') {
-                    this.saveCurrentLevel();
+                    this.saveCurrentLevel(); // This updates this.levels[index] with unscaled data
                 }
 
+                // Export the unscaled data directly from the levels array
                 const levelDataToExport = utils.deepClone(this.levels[index]);
 
                 if (!levelDataToExport || !levelDataToExport.bricks || !levelDataToExport.player || !levelDataToExport.hole || !levelDataToExport.savedCanvasWidth || !levelDataToExport.savedCanvasHeight) {
@@ -647,11 +777,13 @@
                     reader.onload = (e) => {
                         try {
                             const levelData = JSON.parse(e.target.result);
+                            // Basic check before full validation
                             if (typeof levelData !== 'object' || !levelData.name || !levelData.bricks || !levelData.player || !levelData.hole) {
                                 throw new Error(`Invalid base level structure in file ${file.name}.`);
                             }
+                            // Validate and default the imported (unscaled) data
                             this._validateAndDefaultLevel(levelData, this.levels.length);
-                            this.levels.push(levelData);
+                            this.levels.push(levelData); // Add validated unscaled data
                             importedCount++;
                             resolve();
                         } catch (error) {
@@ -673,9 +805,9 @@
                 let message = "";
                 if (importedCount > 0) {
                     message += `Imported ${importedCount} level(s). `;
-                    this.saveLevelsToStorage();
+                    this.saveLevelsToStorage(); // Save the updated list of unscaled levels
                     this.populateLevelList();
-                    this.selectLevelToEdit(this.levels.length - 1);
+                    this.selectLevelToEdit(this.levels.length - 1); // Load the last imported level (will scale it)
                 }
                 if (failedCount > 0) {
                     message += `${failedCount} import(s) failed. Check console for details.`;
@@ -693,21 +825,27 @@
 
     // --- Utility Functions ---
     const utils = {
+        // *** MODIFIED: resizeCanvas reloads level data which applies new scaling ***
         resizeCanvas: () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
             if (!canvas.classList.contains('hidden')) {
+                 // Reload current level - this recalculates scales and updates gameState
                  levelManager.loadLevelData(gameState.currentLevelIndex);
+                 // Redraw is handled within loadLevelData implicitly
             } else {
-                 drawing.draw();
+                 // If canvas hidden (start menu), just draw empty background? Or do nothing.
+                 // Let's do nothing to avoid unnecessary draws.
+                 // drawing.draw(); // Avoid drawing if hidden
             }
         },
-        getRectVertices: (rect) => {
-            const cx = rect.x + rect.width / 2;
-            const cy = rect.y + rect.height / 2;
-            const hw = rect.width / 2;
-            const hh = rect.height / 2;
-            const angle = rect.angle || 0;
+        // *** MODIFIED: Uses scaled dimensions from brick object (gameState) ***
+        getRectVertices: (brick) => {
+            const cx = brick.x + brick.width / 2; // Use scaled x, width
+            const cy = brick.y + brick.height / 2; // Use scaled y, height
+            const hw = brick.width / 2;
+            const hh = brick.height / 2;
+            const angle = brick.angle || 0;
             const cosA = Math.cos(angle);
             const sinA = Math.sin(angle);
             const corners = [ { x: -hw, y: -hh }, { x: hw, y: -hh }, { x: hw, y: hh }, { x: -hw, y: hh } ];
@@ -739,14 +877,16 @@
             }
             return { min, max };
         },
-        projectCircleOntoAxis: (circle, axis) => {
-            const centerProj = Vec.dot(Vec.create(circle.x, circle.y), axis);
-            return { min: centerProj - circle.radius, max: centerProj + circle.radius };
+         // *** MODIFIED: Uses scaled radius from ball object (gameState) ***
+        projectCircleOntoAxis: (ball, axis) => {
+            const centerProj = Vec.dot(Vec.create(ball.x, ball.y), axis);
+            return { min: centerProj - ball.radius, max: centerProj + ball.radius }; // Use ball.radius
         },
-        checkCircleRectCollision: (circle, rect) => {
-            const rectVertices = utils.getRectVertices(rect);
-            const circleCenter = Vec.create(circle.x, circle.y);
-            const rectCenter = Vec.create(rect.x + rect.width / 2, rect.y + rect.height / 2);
+         // *** MODIFIED: Takes ball and brick objects from gameState ***
+        checkCircleRectCollision: (ball, brick) => {
+            const rectVertices = utils.getRectVertices(brick); // Uses scaled brick dims
+            const circleCenter = Vec.create(ball.x, ball.y);
+            const rectCenter = Vec.create(brick.x + brick.width / 2, brick.y + brick.height / 2); // Scaled center
 
             const axes = utils.getRectAxes(rectVertices);
 
@@ -769,7 +909,7 @@
 
             for (const axis of axes) {
                 const rectProj = utils.projectShapeOntoAxis(rectVertices, axis);
-                const circleProj = utils.projectCircleOntoAxis(circle, axis);
+                const circleProj = utils.projectCircleOntoAxis(ball, axis); // Uses scaled ball radius
 
                 const overlap = Math.min(rectProj.max, circleProj.max) - Math.max(rectProj.min, circleProj.min);
 
@@ -790,12 +930,13 @@
 
             return { collision: true, normal: mtvAxis, overlap: minOverlap };
         },
-        isPointInRotatedRect: (px, py, rect) => {
-            const hw = rect.width / 2;
-            const hh = rect.height / 2;
-            const cx = rect.x + hw;
-            const cy = rect.y + hh;
-            const angle = -(rect.angle || 0);
+         // *** MODIFIED: Uses scaled dimensions from brick object (gameState) ***
+        isPointInRotatedRect: (px, py, brick) => {
+            const hw = brick.width / 2; // Scaled half width
+            const hh = brick.height / 2; // Scaled half height
+            const cx = brick.x + hw;
+            const cy = brick.y + hh;
+            const angle = -(brick.angle || 0);
             const cosA = Math.cos(angle);
             const sinA = Math.sin(angle);
 
@@ -807,14 +948,16 @@
 
             return Math.abs(localX) <= hw && Math.abs(localY) <= hh;
         },
+         // *** MODIFIED: Uses scaled dimensions and offsets from gameState ***
         getBrickHandles: (brick) => {
-            const hw = brick.width / 2;
-            const hh = brick.height / 2;
+            const hw = brick.width / 2; // Scaled
+            const hh = brick.height / 2; // Scaled
             const cx = brick.x + hw;
             const cy = brick.y + hh;
             const angle = brick.angle || 0;
             const cosA = Math.cos(angle);
             const sinA = Math.sin(angle);
+            const scaledOffset = gameState.scaledRotateHandleOffset; // Use scaled offset
 
             const rotatePoint = (relX, relY) => ({
                 x: cx + (relX * cosA - relY * sinA),
@@ -826,27 +969,15 @@
                 tr: rotatePoint(hw, -hh),
                 bl: rotatePoint(-hw, hh),
                 br: rotatePoint(hw, hh),
-                rotate: rotatePoint(0, -hh - ROTATE_HANDLE_OFFSET),
+                rotate: rotatePoint(0, -hh - scaledOffset), // Apply scaled offset
                 center: { x: cx, y: cy }
             };
         },
-        deepClone: (obj) => {
-            try {
-                return JSON.parse(JSON.stringify(obj));
-            } catch (e) {
-                console.error("Deep clone failed:", e, obj);
-                return null;
-            }
-        },
-        selectionsAreEqual: (selA, selB) => {
-            if (selA.length !== selB.length) return false;
-            const sortFn = (a, b) => (a.type + a.index).localeCompare(b.type + b.index);
-            const sortedA = [...selA].sort(sortFn);
-            const sortedB = [...selB].sort(sortFn);
-            return sortedA.every((item, i) => item.type === sortedB[i].type && item.index === sortedB[i].index);
-        },
-        getRectBoundingBox: (rect) => {
-            const vertices = utils.getRectVertices(rect);
+        deepClone: (obj) => { /* ... unchanged ... */ },
+        selectionsAreEqual: (selA, selB) => { /* ... unchanged ... */ },
+         // *** MODIFIED: Uses scaled dimensions from brick object (gameState) ***
+        getRectBoundingBox: (brick) => {
+            const vertices = utils.getRectVertices(brick); // Uses scaled dims
             let minX = vertices[0].x, maxX = vertices[0].x, minY = vertices[0].y, maxY = vertices[0].y;
             for (let i = 1; i < vertices.length; i++) {
                 minX = Math.min(minX, vertices[i].x);
@@ -856,33 +987,37 @@
             }
             return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
         },
-        doRectsOverlap: (rect1, rect2) => {
-            return rect1.x < rect2.x + rect2.width &&
-                   rect1.x + rect1.width > rect2.x &&
-                   rect1.y < rect2.y + rect2.height &&
-                   rect1.y + rect1.height > rect2.y;
-        },
-        sanitizeFilename: (name) => {
-            if (!name) return 'level';
-            return name.replace(/[^a-z0-9_\-\s.]/gi, '_').replace(/[\s_]+/g, '_');
-        },
-        statesAreEqual: (stateA, stateB) => {
-            try {
-                return JSON.stringify(stateA) === JSON.stringify(stateB);
-            } catch (e) {
-                console.error("State comparison failed:", e);
-                return false;
-            }
-        }
+        doRectsOverlap: (rect1, rect2) => { /* ... unchanged ... */ },
+        sanitizeFilename: (name) => { /* ... unchanged ... */ },
+        statesAreEqual: (stateA, stateB) => { /* ... unchanged ... */ }
     };
+    utils.deepClone = (obj) => { try { return JSON.parse(JSON.stringify(obj)); } catch (e) { console.error("Deep clone failed:", e, obj); return null; } };
+    utils.selectionsAreEqual = (selA, selB) => { if (selA.length !== selB.length) return false; const sortFn = (a, b) => (a.type + a.index).localeCompare(b.type + b.index); const sortedA = [...selA].sort(sortFn); const sortedB = [...selB].sort(sortFn); return sortedA.every((item, i) => item.type === sortedB[i].type && item.index === sortedB[i].index); };
+    utils.doRectsOverlap = (rect1, rect2) => { return rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x && rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y; };
+    utils.sanitizeFilename = (name) => { if (!name) return 'level'; return name.replace(/[^a-z0-9_\-\s.]/gi, '_').replace(/[\s_]+/g, '_'); };
+    utils.statesAreEqual = (stateA, stateB) => { try { return JSON.stringify(stateA) === JSON.stringify(stateB); } catch (e) { console.error("State comparison failed:", e); return false; } };
+
 
     // --- History / Undo-Redo Manager ---
     const historyManager = {
+        // *** MODIFIED: Snapshots gameState which now contains scaled values ***
         getCurrentStateSnapshot: () => {
             return {
                 bricks: utils.deepClone(gameState.bricks),
                 player: utils.deepClone(gameState.player),
                 hole: utils.deepClone(gameState.hole),
+                // Also save scaled constants? Might be needed if they change dynamically
+                scaledPlayerBottomOffset: gameState.scaledPlayerBottomOffset,
+                scaledMinBrickDimension: gameState.scaledMinBrickDimension,
+                scaledHandleSize: gameState.scaledHandleSize,
+                scaledRotateHandleOffset: gameState.scaledRotateHandleOffset,
+                scaledAimLineLength: gameState.scaledAimLineLength,
+                scaledBallOutlineWidth: gameState.scaledBallOutlineWidth,
+                // Store scales used for this state to allow correct unscaling if needed later?
+                // Or assume save always uses the latest scales? Let's assume latest for now.
+                lastScaleX: gameState.lastScaleX,
+                lastScaleY: gameState.lastScaleY,
+                lastScaleMin: gameState.lastScaleMin,
             };
         },
         saveState: (forceSave = false) => {
@@ -893,11 +1028,10 @@
             const currentState = historyManager.getCurrentStateSnapshot();
 
             if (editorState.historyIndex >= 0 && utils.statesAreEqual(currentState, editorState.history[editorState.historyIndex])) {
-                return;
+                return; // Don't save identical states
             }
 
             editorState.history = editorState.history.slice(0, editorState.historyIndex + 1);
-
             editorState.history.push(currentState);
             editorState.historyIndex++;
 
@@ -906,23 +1040,34 @@
                 editorState.historyIndex--;
             }
         },
+        // *** MODIFIED: Loads scaled state directly into gameState ***
         loadStateFromHistory: (stateData) => {
             if (!stateData) return;
+            // Restore scaled state directly
             gameState.bricks = utils.deepClone(stateData.bricks);
             gameState.player = utils.deepClone(stateData.player);
             gameState.hole = utils.deepClone(stateData.hole);
+            // Restore scaled constants
+            gameState.scaledPlayerBottomOffset = stateData.scaledPlayerBottomOffset;
+            gameState.scaledMinBrickDimension = stateData.scaledMinBrickDimension;
+            gameState.scaledHandleSize = stateData.scaledHandleSize;
+            gameState.scaledRotateHandleOffset = stateData.scaledRotateHandleOffset;
+            gameState.scaledAimLineLength = stateData.scaledAimLineLength;
+            gameState.scaledBallOutlineWidth = stateData.scaledBallOutlineWidth;
+            // Restore scales active at that time
+            gameState.lastScaleX = stateData.lastScaleX;
+            gameState.lastScaleY = stateData.lastScaleY;
+            gameState.lastScaleMin = stateData.lastScaleMin;
 
-            if (gameState.ball.onPlayer) {
-                gameLogic.resetBallPosition();
-            }
-            gameLogic.resetBall();
+
+            // Reset ball position based on restored player state
+            gameLogic.resetBall(); // Resets ball completely
 
             editor.resetSelectionAndDragging();
             uiManager.updateBrickPropertiesUI();
         },
         undo: () => {
             if (gameState.mode !== 'editor' || editorState.historyIndex <= 0) return;
-
             editorState.historyIndex--;
             const stateToLoad = editorState.history[editorState.historyIndex];
             historyManager.loadStateFromHistory(stateToLoad);
@@ -930,7 +1075,6 @@
         },
         redo: () => {
             if (gameState.mode !== 'editor' || editorState.historyIndex >= editorState.history.length - 1) return;
-
             editorState.historyIndex++;
             const stateToLoad = editorState.history[editorState.historyIndex];
             historyManager.loadStateFromHistory(stateToLoad);
@@ -941,118 +1085,17 @@
     // --- UI Manager ---
     const uiManager = {
         messageTimeoutId: null,
-        hideMenu: () => {
-             menuDiv.classList.add('hidden');
-             menuDiv.classList.remove('initially-hidden'); // Ensure it can be shown later
-             showMenuButton.classList.remove('hidden');
-        },
-        showMenu: () => {
-             menuDiv.classList.remove('hidden', 'initially-hidden');
-             showMenuButton.classList.add('hidden');
-        },
-        showMessage: (text, duration = MESSAGE_DISPLAY_TIME) => {
-            messageText.textContent = text;
-            messageBox.style.display = 'block';
-            if (uiManager.messageTimeoutId) { clearTimeout(uiManager.messageTimeoutId); }
-            if (duration > 0) {
-                uiManager.messageTimeoutId = setTimeout(uiManager.hideMessage, duration);
-            }
-        },
-        hideMessage: () => {
-            messageBox.style.display = 'none';
-            if (uiManager.messageTimeoutId) {
-                clearTimeout(uiManager.messageTimeoutId);
-                uiManager.messageTimeoutId = null;
-            }
-        },
-        updateUIForMode: () => {
-            const isEditor = gameState.mode === 'editor';
-            editorControlsDiv.classList.toggle('hidden', !isEditor);
-            saveButton.classList.toggle('hidden', !isEditor);
-            editorButton.classList.toggle('bg-red-500', isEditor);
-            editorButton.classList.toggle('hover:bg-red-600', isEditor);
-            editorButton.classList.toggle('bg-green-500', !isEditor);
-            editorButton.classList.toggle('hover:bg-green-600', !isEditor);
-            playButton.classList.toggle('bg-red-500', !isEditor);
-            playButton.classList.toggle('hover:bg-red-600', !isEditor);
-            playButton.classList.toggle('bg-blue-500', isEditor);
-            playButton.classList.toggle('hover:bg-blue-600', isEditor);
-
-            uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y);
-            uiManager.updateBrickPropertiesUI();
-            if (!isEditor) {
-                 uiManager.hideContextMenu();
-                 editor.resetSelectionAndDragging();
-            }
-        },
-        updateLevelDisplays: () => {
-            const displayLevel = gameState.currentLevelIndex + 1;
-            levelDisplay.textContent = displayLevel;
-            editingLevelDisplay.textContent = displayLevel;
-        },
-        showContextMenu: (x, y) => {
-            contextMenuDiv.innerHTML = '';
-            const target = editorState.contextMenuTarget;
-
-            if (target) {
-                if (target.type === 'empty') {
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Brick', () => editor.addBrick('static')));
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Kill Brick', () => editor.addBrick('kill')));
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Vertical Mover', () => editor.addBrick('vertical')));
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Horizontal Mover', () => editor.addBrick('horizontal')));
-                } else if (target.type === 'brick' && target.index !== undefined) {
-                    const index = target.index;
-                    const brick = gameState.bricks[index];
-                    if (!brick) return;
-
-                    const toggleKillText = brick.isKillBrick ? 'Make Normal Brick' : 'Make Kill Brick';
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton(toggleKillText, () => editor.toggleKillBrick(index)));
-                    contextMenuDiv.appendChild(document.createElement('hr'));
-                    if (brick.movementType !== 'vertical') {
-                        contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Vertical Mover', () => editor.setMovementType(index, 'vertical')));
-                    }
-                    if (brick.movementType !== 'horizontal') {
-                        contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Horizontal Mover', () => editor.setMovementType(index, 'horizontal')));
-                    }
-                    if (brick.movementType !== null) {
-                        contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Static', () => editor.setMovementType(index, null)));
-                    }
-                    contextMenuDiv.appendChild(document.createElement('hr'));
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Copy', editor.handleCopy));
-                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Delete Brick', () => editor.deleteSingleBrick(index)));
-                } else if (target.type === 'player' || target.type === 'hole') {
-                     contextMenuDiv.appendChild(uiManager.createContextMenuButton('Cannot Delete', () => { uiManager.showMessage("Player and Hole cannot be deleted.", 1500); }));
-                }
-            }
-
-            contextMenuDiv.style.left = `${x}px`;
-            contextMenuDiv.style.top = `${y}px`;
-            contextMenuDiv.style.display = 'block';
-        },
-        hideContextMenu: () => {
-            contextMenuDiv.style.display = 'none';
-            editorState.contextMenuTarget = null;
-        },
-        createContextMenuButton: (text, onClickAction) => {
-            const button = document.createElement('button');
-            button.textContent = text;
-            button.onclick = () => {
-                onClickAction();
-                uiManager.hideContextMenu();
-            };
-            return button;
-        },
-        createLevelControlButton: (html, title, onClickAction, disabled = false) => {
-            const button = document.createElement('button');
-            button.innerHTML = html;
-            button.title = title;
-            button.disabled = disabled;
-            button.onclick = (e) => {
-                e.stopPropagation();
-                onClickAction();
-            };
-            return button;
-        },
+        hideMenu: () => { /* ... unchanged ... */ },
+        showMenu: () => { /* ... unchanged ... */ },
+        showMessage: (text, duration = MESSAGE_DISPLAY_TIME) => { /* ... unchanged ... */ },
+        hideMessage: () => { /* ... unchanged ... */ },
+        updateUIForMode: () => { /* ... unchanged ... */ },
+        updateLevelDisplays: () => { /* ... unchanged ... */ },
+        showContextMenu: (x, y) => { /* ... unchanged ... */ },
+        hideContextMenu: () => { /* ... unchanged ... */ },
+        createContextMenuButton: (text, onClickAction) => { /* ... unchanged ... */ },
+        createLevelControlButton: (html, title, onClickAction, disabled = false) => { /* ... unchanged ... */ },
+        // *** MODIFIED: Uses scaled handle size for hit testing ***
         updateCursorStyle: (mx, my) => {
             if (!startMenu.classList.contains('hidden') || gameState.mode !== 'editor' || uiManager.isPointerOverUI(mx, my)) {
                 canvas.style.cursor = 'default';
@@ -1060,17 +1103,20 @@
             }
 
             let cursorSet = false;
+            const scaledHandleHitSize = gameState.scaledHandleSize * 1.5; // Generous hit area
 
             if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') {
                 const brick = gameState.bricks[editorState.selectedItems[0].index];
                 if (brick) {
-                    const handles = utils.getBrickHandles(brick);
-                    if (Math.hypot(mx - handles.rotate.x, my - handles.rotate.y) <= HANDLE_SIZE * 1.5) {
+                    const handles = utils.getBrickHandles(brick); // Gets scaled handle positions
+                    // Check rotate handle
+                    if (Math.hypot(mx - handles.rotate.x, my - handles.rotate.y) <= scaledHandleHitSize * ROTATE_HANDLE_SIZE_FACTOR) {
                         canvas.style.cursor = 'grab';
                         cursorSet = true;
                     } else {
+                        // Check resize handles
                         for (const type of ['tl', 'tr', 'bl', 'br']) {
-                            if (Math.hypot(mx - handles[type].x, my - handles[type].y) <= HANDLE_SIZE * 1.2) {
+                            if (Math.hypot(mx - handles[type].x, my - handles[type].y) <= scaledHandleHitSize) {
                                 canvas.style.cursor = (type === 'tl' || type === 'br') ? 'nwse-resize' : 'nesw-resize';
                                 cursorSet = true;
                                 break;
@@ -1099,61 +1145,16 @@
                 canvas.style.cursor = 'default';
             }
         },
-        isPointerOverUI: (px, py) => {
-            if (!startMenu.classList.contains('hidden')) {
-                 const startRect = startMenu.getBoundingClientRect();
-                 if (px >= startRect.left && px <= startRect.right && py >= startRect.top && py <= startRect.bottom) {
-                     return true;
-                 }
-            }
-            if (!menuDiv.classList.contains('hidden') && !menuDiv.classList.contains('initially-hidden')) {
-                const menuRect = menuDiv.getBoundingClientRect();
-                if (px >= menuRect.left && px <= menuRect.right && py >= menuRect.top && py <= menuRect.bottom) {
-                    return true;
-                }
-            }
-            if (!showMenuButton.classList.contains('hidden')) {
-                const buttonRect = showMenuButton.getBoundingClientRect();
-                if (px >= buttonRect.left && px <= buttonRect.right && py >= buttonRect.top && py <= buttonRect.bottom) {
-                    return true;
-                }
-            }
-            if (contextMenuDiv.style.display === 'block') {
-                 const contextRect = contextMenuDiv.getBoundingClientRect();
-                 if (px >= contextRect.left && px <= contextRect.right && py >= contextRect.top && py <= contextRect.bottom) {
-                     return true;
-                 }
-            }
-            if (messageBox.style.display === 'block') {
-                 const messageRect = messageBox.getBoundingClientRect();
-                 if (px >= messageRect.left && px <= messageRect.right && py >= messageRect.top && py <= messageRect.bottom) {
-                     return true;
-                 }
-            }
-            return false;
-        },
-        updateMarqueeBox: () => {
-            if (editorState.isMarqueeSelecting) {
-                const x = Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x);
-                const y = Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y);
-                const width = Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x);
-                const height = Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y);
-                marqueeBox.style.left = `${x}px`;
-                marqueeBox.style.top = `${y}px`;
-                marqueeBox.style.width = `${width}px`;
-                marqueeBox.style.height = `${height}px`;
-                marqueeBox.style.display = 'block';
-            } else {
-                marqueeBox.style.display = 'none';
-            }
-        },
+        isPointerOverUI: (px, py) => { /* ... unchanged ... */ },
+        updateMarqueeBox: () => { /* ... unchanged ... */ },
+        // *** MODIFIED: Displays scaled move range ***
         updateBrickPropertiesUI: () => {
             if (editorState.isUpdatingPropertiesFromInput) return;
 
             if (gameState.mode === 'editor' && editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') {
                 const brickIndex = editorState.selectedItems[0].index;
                 if (brickIndex !== undefined && brickIndex >= 0 && brickIndex < gameState.bricks.length) {
-                    const brick = gameState.bricks[brickIndex];
+                    const brick = gameState.bricks[brickIndex]; // Gets brick with scaled values
                     if (brick) {
                         brickPropertiesDiv.classList.remove('hidden');
                         const isMover = brick.movementType === 'vertical' || brick.movementType === 'horizontal';
@@ -1161,7 +1162,8 @@
                         propMoveRangeInput.disabled = !isMover;
                         propMoveSpeedInput.disabled = !isMover;
 
-                        propMoveRangeInput.value = isMover ? (brick.moveRange ?? DEFAULT_MOVE_RANGE).toFixed(1) : '';
+                        // Display the currently scaled move range
+                        propMoveRangeInput.value = isMover ? (brick.moveRange ?? 0).toFixed(1) : ''; // Use scaled range
                         propMoveSpeedInput.value = isMover ? (brick.moveSpeed ?? DEFAULT_MOVE_SPEED).toFixed(1) : '';
 
                         propMoveRangeInput.placeholder = isMover ? '' : 'N/A (Static)';
@@ -1173,6 +1175,19 @@
             brickPropertiesDiv.classList.add('hidden');
         }
     };
+    uiManager.hideMenu = () => { menuDiv.classList.add('hidden'); menuDiv.classList.remove('initially-hidden'); showMenuButton.classList.remove('hidden'); };
+    uiManager.showMenu = () => { menuDiv.classList.remove('hidden', 'initially-hidden'); showMenuButton.classList.add('hidden'); };
+    uiManager.showMessage = (text, duration = MESSAGE_DISPLAY_TIME) => { messageText.textContent = text; messageBox.style.display = 'block'; if (uiManager.messageTimeoutId) { clearTimeout(uiManager.messageTimeoutId); } if (duration > 0) { uiManager.messageTimeoutId = setTimeout(uiManager.hideMessage, duration); } };
+    uiManager.hideMessage = () => { messageBox.style.display = 'none'; if (uiManager.messageTimeoutId) { clearTimeout(uiManager.messageTimeoutId); uiManager.messageTimeoutId = null; } };
+    uiManager.updateUIForMode = () => { const isEditor = gameState.mode === 'editor'; editorControlsDiv.classList.toggle('hidden', !isEditor); saveButton.classList.toggle('hidden', !isEditor); editorButton.classList.toggle('bg-red-500', isEditor); editorButton.classList.toggle('hover:bg-red-600', isEditor); editorButton.classList.toggle('bg-green-500', !isEditor); editorButton.classList.toggle('hover:bg-green-600', !isEditor); playButton.classList.toggle('bg-red-500', !isEditor); playButton.classList.toggle('hover:bg-red-600', !isEditor); playButton.classList.toggle('bg-blue-500', isEditor); playButton.classList.toggle('hover:bg-blue-600', isEditor); uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y); uiManager.updateBrickPropertiesUI(); if (!isEditor) { uiManager.hideContextMenu(); editor.resetSelectionAndDragging(); } };
+    uiManager.updateLevelDisplays = () => { const displayLevel = gameState.currentLevelIndex + 1; levelDisplay.textContent = displayLevel; editingLevelDisplay.textContent = displayLevel; };
+    uiManager.showContextMenu = (x, y) => { contextMenuDiv.innerHTML = ''; const target = editorState.contextMenuTarget; if (target) { if (target.type === 'empty') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Brick', () => editor.addBrick('static'))); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Kill Brick', () => editor.addBrick('kill'))); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Vertical Mover', () => editor.addBrick('vertical'))); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Horizontal Mover', () => editor.addBrick('horizontal'))); } else if (target.type === 'brick' && target.index !== undefined) { const index = target.index; const brick = gameState.bricks[index]; if (!brick) return; const toggleKillText = brick.isKillBrick ? 'Make Normal Brick' : 'Make Kill Brick'; contextMenuDiv.appendChild(uiManager.createContextMenuButton(toggleKillText, () => editor.toggleKillBrick(index))); contextMenuDiv.appendChild(document.createElement('hr')); if (brick.movementType !== 'vertical') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Vertical Mover', () => editor.setMovementType(index, 'vertical'))); } if (brick.movementType !== 'horizontal') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Horizontal Mover', () => editor.setMovementType(index, 'horizontal'))); } if (brick.movementType !== null) { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Static', () => editor.setMovementType(index, null))); } contextMenuDiv.appendChild(document.createElement('hr')); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Copy', editor.handleCopy)); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Delete Brick', () => editor.deleteSingleBrick(index))); } else if (target.type === 'player' || target.type === 'hole') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Cannot Delete', () => { uiManager.showMessage("Player and Hole cannot be deleted.", 1500); })); } } contextMenuDiv.style.left = `${x}px`; contextMenuDiv.style.top = `${y}px`; contextMenuDiv.style.display = 'block'; };
+    uiManager.hideContextMenu = () => { contextMenuDiv.style.display = 'none'; editorState.contextMenuTarget = null; };
+    uiManager.createContextMenuButton = (text, onClickAction) => { const button = document.createElement('button'); button.textContent = text; button.onclick = () => { onClickAction(); uiManager.hideContextMenu(); }; return button; };
+    uiManager.createLevelControlButton = (html, title, onClickAction, disabled = false) => { const button = document.createElement('button'); button.innerHTML = html; button.title = title; button.disabled = disabled; button.onclick = (e) => { e.stopPropagation(); onClickAction(); }; return button; };
+    uiManager.isPointerOverUI = (px, py) => { if (!startMenu.classList.contains('hidden')) { const startRect = startMenu.getBoundingClientRect(); if (px >= startRect.left && px <= startRect.right && py >= startRect.top && py <= startRect.bottom) { return true; } } if (!menuDiv.classList.contains('hidden') && !menuDiv.classList.contains('initially-hidden')) { const menuRect = menuDiv.getBoundingClientRect(); if (px >= menuRect.left && px <= menuRect.right && py >= menuRect.top && py <= menuRect.bottom) { return true; } } if (!showMenuButton.classList.contains('hidden')) { const buttonRect = showMenuButton.getBoundingClientRect(); if (px >= buttonRect.left && px <= buttonRect.right && py >= buttonRect.top && py <= buttonRect.bottom) { return true; } } if (contextMenuDiv.style.display === 'block') { const contextRect = contextMenuDiv.getBoundingClientRect(); if (px >= contextRect.left && px <= contextRect.right && py >= contextRect.top && py <= contextRect.bottom) { return true; } } if (messageBox.style.display === 'block') { const messageRect = messageBox.getBoundingClientRect(); if (px >= messageRect.left && px <= messageRect.right && py >= messageRect.top && py <= messageRect.bottom) { return true; } } return false; };
+    uiManager.updateMarqueeBox = () => { if (editorState.isMarqueeSelecting) { const x = Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x); const y = Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y); const width = Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x); const height = Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y); marqueeBox.style.left = `${x}px`; marqueeBox.style.top = `${y}px`; marqueeBox.style.width = `${width}px`; marqueeBox.style.height = `${height}px`; marqueeBox.style.display = 'block'; } else { marqueeBox.style.display = 'none'; } };
+
 
     // --- Game Logic ---
     const gameLogic = {
@@ -1181,9 +1196,10 @@
 
              const time = Date.now() * 0.001;
              gameState.bricks.forEach(brick => {
+                 // *** MODIFIED: Uses scaled initial positions and range from gameState ***
                  if (brick.movementType && brick.initialX !== undefined && brick.initialY !== undefined) {
                      const speed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED;
-                     const range = brick.moveRange ?? DEFAULT_MOVE_RANGE;
+                     const range = brick.moveRange; // Already scaled
                      const offset = range * Math.sin(time * speed);
 
                      if (brick.movementType === 'vertical') {
@@ -1201,6 +1217,7 @@
                 gameState.ball.x += gameState.ball.vx;
                 gameState.ball.y += gameState.ball.vy;
 
+                // *** MODIFIED: Uses scaled ball radius ***
                 if (gameState.ball.x - gameState.ball.radius < 0 || gameState.ball.x + gameState.ball.radius > canvas.width || gameState.ball.y - gameState.ball.radius < 0) {
                     gameLogic.restartLevelAttempt("Hit wall!");
                     return;
@@ -1210,6 +1227,7 @@
                     return;
                 }
 
+                // *** MODIFIED: Uses scaled ball/brick dimensions from gameState ***
                 for (const brick of gameState.bricks) {
                     const collision = utils.checkCircleRectCollision(gameState.ball, brick);
                     if (collision.collision) {
@@ -1217,19 +1235,17 @@
                             gameLogic.restartLevelAttempt("Hit a kill brick!");
                             return;
                         }
-
                         const pushVector = Vec.scale(collision.normal, collision.overlap * COLLISION_PUSH_FACTOR);
                         gameState.ball.x += pushVector.x;
                         gameState.ball.y += pushVector.y;
-
                         const velocity = Vec.create(gameState.ball.vx, gameState.ball.vy);
                         const reflectedVel = Vec.reflect(velocity, collision.normal);
                         gameState.ball.vx = reflectedVel.x;
                         gameState.ball.vy = reflectedVel.y;
-
                     }
                 }
 
+                // *** MODIFIED: Uses scaled player/ball dimensions from gameState ***
                 const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height };
                 const ballRect = { x: gameState.ball.x - gameState.ball.radius, y: gameState.ball.y - gameState.ball.radius, width: gameState.ball.radius * 2, height: gameState.ball.radius * 2 };
                 if (utils.doRectsOverlap(ballRect, playerRect)) {
@@ -1237,6 +1253,7 @@
                     return;
                 }
 
+                // *** MODIFIED: Uses scaled ball/hole radii from gameState ***
                 const distToHoleSq = Vec.lenSq(Vec.sub(Vec.create(gameState.ball.x, gameState.ball.y), Vec.create(gameState.hole.x, gameState.hole.y)));
                 const radiiSumSq = (gameState.ball.radius + gameState.hole.radius) * (gameState.ball.radius + gameState.hole.radius);
                 if (distToHoleSq < radiiSumSq) {
@@ -1244,7 +1261,7 @@
                     const nextLevelIndex = gameState.currentLevelIndex + 1;
                     if (nextLevelIndex < levelManager.levels.length) {
                         levelManager.selectLevelToEdit(nextLevelIndex);
-                        gameLogic.startGame();
+                        // No need to call startGame here, selectLevelToEdit handles it
                     } else {
                         uiManager.showMessage("Congratulations! You beat all levels!", 0);
                         gameLogic.switchToEditorMode();
@@ -1265,9 +1282,11 @@
             editorState.aim.dy = 0;
             gameLogic.resetBallPosition();
         },
+        // *** MODIFIED: Uses scaled player/ball dimensions from gameState ***
         resetBallPosition: () => {
+            // Position ball centered above the player paddle using scaled dimensions
             gameState.ball.x = gameState.player.x + gameState.player.width / 2;
-            gameState.ball.y = gameState.player.y - gameState.ball.radius - 2;
+            gameState.ball.y = gameState.player.y - gameState.ball.radius - (2 * gameState.lastScaleMin); // Small scaled gap
         },
         fireBall: () => {
             if (!gameState.ball.onPlayer || gameState.mode === 'editor' || !editorState.aim.active) return;
@@ -1275,7 +1294,7 @@
 
             gameState.ball.fired = true;
             gameState.ball.onPlayer = false;
-            gameState.ball.vx = editorState.aim.dx;
+            gameState.ball.vx = editorState.aim.dx; // Aim dx/dy are already calculated based on screen coords
             gameState.ball.vy = editorState.aim.dy;
 
             editorState.aim.active = false;
@@ -1293,14 +1312,14 @@
             uiManager.hideContextMenu();
             uiManager.hideMessage();
             editor.resetSelectionAndDragging();
-            levelManager.loadLevelData(gameState.currentLevelIndex);
+            levelManager.loadLevelData(gameState.currentLevelIndex); // Reloads and scales level
             uiManager.updateUIForMode();
         },
         switchToEditorMode: () => {
             gameState.mode = 'editor';
             editorState.aim.active = false;
             uiManager.hideContextMenu();
-            levelManager.loadLevelData(gameState.currentLevelIndex);
+            levelManager.loadLevelData(gameState.currentLevelIndex); // Reloads and scales level
             uiManager.updateUIForMode();
         }
     };
@@ -1327,24 +1346,27 @@
                 drawing.drawEditorOverlays();
             }
         },
+        // *** MODIFIED: Uses scaled radius from gameState ***
         drawHole: () => {
             const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'hole');
             ctx.fillStyle = "#222";
             ctx.beginPath();
-            ctx.arc(gameState.hole.x, gameState.hole.y, gameState.hole.radius, 0, Math.PI * 2);
+            ctx.arc(gameState.hole.x, gameState.hole.y, gameState.hole.radius, 0, Math.PI * 2); // Use scaled radius
             ctx.fill();
 
             if (isSelected) {
                 ctx.strokeStyle = SELECTED_ITEM_OUTLINE_COLOR;
-                ctx.lineWidth = 2;
+                ctx.lineWidth = 2; // Keep outline fixed for now, or scale?
                 ctx.stroke();
             }
         },
+         // *** MODIFIED: Uses scaled dimensions from brick object (gameState) ***
         drawBrick: (brick, index) => {
             const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'brick' && item.index === index);
 
             ctx.save();
 
+            // Use scaled position and dimensions from the brick object
             const centerX = brick.x + brick.width / 2;
             const centerY = brick.y + brick.height / 2;
             ctx.translate(centerX, centerY);
@@ -1352,37 +1374,32 @@
             ctx.translate(-centerX, -centerY);
 
             let fillColor = BRICK_COLOR;
-            if (brick.isKillBrick) {
-                fillColor = KILL_BRICK_COLOR;
-            } else if (brick.movementType === 'vertical') {
-                fillColor = VERTICAL_MOVER_COLOR;
-            } else if (brick.movementType === 'horizontal') {
-                fillColor = HORIZONTAL_MOVER_COLOR;
-            }
-            if (isSelected) {
-                fillColor = SELECTED_BRICK_COLOR;
-            }
+            if (brick.isKillBrick) fillColor = KILL_BRICK_COLOR;
+            else if (brick.movementType === 'vertical') fillColor = VERTICAL_MOVER_COLOR;
+            else if (brick.movementType === 'horizontal') fillColor = HORIZONTAL_MOVER_COLOR;
+            if (isSelected) fillColor = SELECTED_BRICK_COLOR;
 
             ctx.fillStyle = fillColor;
             ctx.strokeStyle = BRICK_STROKE_COLOR;
-            ctx.lineWidth = 1;
-            ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
-            ctx.strokeRect(brick.x, brick.y, brick.width, brick.height);
+            ctx.lineWidth = 1; // Keep fixed or scale? Fixed for now.
+            ctx.fillRect(brick.x, brick.y, brick.width, brick.height); // Use scaled dims
+            ctx.strokeRect(brick.x, brick.y, brick.width, brick.height); // Use scaled dims
 
             ctx.restore();
         },
+        // *** MODIFIED: Uses scaled dimensions from gameState.player ***
         drawPlayer: () => {
             const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'player');
-            const player = gameState.player;
+            const player = gameState.player; // Contains scaled values
 
             ctx.fillStyle = "#4CAF50";
-            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.fillRect(player.x, player.y, player.width, player.height); // Use scaled dims
 
             const headX = player.x + player.width / 2;
-            const headY = player.y - PLAYER_HEAD_RADIUS;
+            const headY = player.y - player.headRadius; // Use scaled radius for positioning
             ctx.fillStyle = "#8BC34A";
             ctx.beginPath();
-            ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2);
+            ctx.arc(headX, headY, player.headRadius, 0, Math.PI * 2); // Use scaled radius
             ctx.fill();
 
             if (isSelected) {
@@ -1390,21 +1407,23 @@
                 ctx.lineWidth = 2;
                 ctx.strokeRect(player.x, player.y, player.width, player.height);
                 ctx.beginPath();
-                ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2);
+                ctx.arc(headX, headY, player.headRadius, 0, Math.PI * 2);
                 ctx.stroke();
             }
         },
+        // *** MODIFIED: Uses scaled radius and outline width from gameState ***
         drawBall: () => {
             ctx.save();
             ctx.fillStyle = "white";
             ctx.strokeStyle = "black";
-            ctx.lineWidth = BALL_OUTLINE_WIDTH;
+            ctx.lineWidth = gameState.scaledBallOutlineWidth; // Use scaled outline width
             ctx.beginPath();
-            ctx.arc(gameState.ball.x, gameState.ball.y, gameState.ball.radius, 0, Math.PI * 2);
+            ctx.arc(gameState.ball.x, gameState.ball.y, gameState.ball.radius, 0, Math.PI * 2); // Use scaled radius
             ctx.fill();
             ctx.stroke();
             ctx.restore();
         },
+        // *** MODIFIED: Uses scaled aim line length from gameState ***
         drawAimLine: () => {
             ctx.save();
             ctx.beginPath();
@@ -1413,18 +1432,20 @@
             const potentialVx = editorState.aim.dx;
             const potentialVy = editorState.aim.dy;
 
+            // Calculate end point based on velocity and *visual scale factor* (not scaled length)
+            // The length limit is handled implicitly by capping power during updateAim
             const endX = gameState.ball.x + potentialVx * AIM_VISUAL_SCALE;
             const endY = gameState.ball.y + potentialVy * AIM_VISUAL_SCALE;
 
             ctx.lineTo(endX, endY);
             ctx.strokeStyle = "rgba(255, 0, 0, 0.7)";
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2; // Keep fixed for now
             ctx.setLineDash([5, 3]);
             ctx.stroke();
             ctx.setLineDash([]);
 
             ctx.beginPath();
-            ctx.arc(endX, endY, 3, 0, Math.PI * 2);
+            ctx.arc(endX, endY, 3 * gameState.lastScaleMin, 0, Math.PI * 2); // Scale endpoint indicator
             ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
             ctx.fill();
             ctx.restore();
@@ -1433,108 +1454,444 @@
             if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') {
                 const brickIndex = editorState.selectedItems[0].index;
                  if (brickIndex !== undefined && brickIndex >= 0 && brickIndex < gameState.bricks.length) {
-                     const brick = gameState.bricks[brickIndex];
+                     const brick = gameState.bricks[brickIndex]; // Brick has scaled values
                      if (brick) {
                          if (brick.movementType === 'vertical' || brick.movementType === 'horizontal') {
-                             drawing.drawMovementRange(brick);
+                             drawing.drawMovementRange(brick); // Uses scaled range from brick
                          }
-                         drawing.drawHandles(brick);
+                         drawing.drawHandles(brick); // Uses scaled handle size/offset
                      }
                  }
             }
         },
+        // *** MODIFIED: Uses scaled initial position and range from brick object (gameState) ***
         drawMovementRange: (brick) => {
-            const initialCenterX = (brick.initialX ?? brick.x) + brick.width / 2;
-            const initialCenterY = (brick.initialY ?? brick.y) + brick.height / 2;
-            const range = brick.moveRange ?? DEFAULT_MOVE_RANGE;
+            const initialCenterX = (brick.initialX ?? brick.x); // Already scaled initialX
+            const initialCenterY = (brick.initialY ?? brick.y); // Already scaled initialY
+            const range = brick.moveRange; // Already scaled range
 
             ctx.save();
             ctx.strokeStyle = MOVER_RANGE_INDICATOR_COLOR;
-            ctx.lineWidth = MOVER_RANGE_INDICATOR_WIDTH;
+            ctx.lineWidth = MOVER_RANGE_INDICATOR_WIDTH; // Keep fixed
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
 
             if (brick.movementType === 'vertical') {
-                const y1 = initialCenterY - range;
-                const y2 = initialCenterY + range;
-                ctx.moveTo(initialCenterX, y1);
-                ctx.lineTo(initialCenterX, y2);
-                ctx.moveTo(initialCenterX - 5, y1); ctx.lineTo(initialCenterX + 5, y1);
-                ctx.moveTo(initialCenterX - 5, y2); ctx.lineTo(initialCenterX + 5, y2);
+                const y1 = initialCenterY - range + brick.height / 2; // Adjust for center vs top-left
+                const y2 = initialCenterY + range + brick.height / 2;
+                const centerX = initialCenterX + brick.width / 2;
+                ctx.moveTo(centerX, y1); ctx.lineTo(centerX, y2);
+                ctx.moveTo(centerX - 5, y1); ctx.lineTo(centerX + 5, y1);
+                ctx.moveTo(centerX - 5, y2); ctx.lineTo(centerX + 5, y2);
             } else {
-                const x1 = initialCenterX - range;
-                const x2 = initialCenterX + range;
-                ctx.moveTo(x1, initialCenterY);
-                ctx.lineTo(x2, initialCenterY);
-                ctx.moveTo(x1, initialCenterY - 5); ctx.lineTo(x1, initialCenterY + 5);
-                ctx.moveTo(x2, initialCenterY - 5); ctx.lineTo(x2, initialCenterY + 5);
+                const x1 = initialCenterX - range + brick.width / 2; // Adjust for center vs top-left
+                const x2 = initialCenterX + range + brick.width / 2;
+                 const centerY = initialCenterY + brick.height / 2;
+                ctx.moveTo(x1, centerY); ctx.lineTo(x2, centerY);
+                ctx.moveTo(x1, centerY - 5); ctx.lineTo(x1, centerY + 5);
+                ctx.moveTo(x2, centerY - 5); ctx.lineTo(x2, centerY + 5);
             }
             ctx.stroke();
             ctx.restore();
         },
+        // *** MODIFIED: Uses scaled handle size and dimensions from gameState ***
         drawHandles: (brick) => {
-            const handles = utils.getBrickHandles(brick);
+            const handles = utils.getBrickHandles(brick); // Calculates scaled handle positions
+            const scaledHandleDrawSize = gameState.scaledHandleSize * 2; // Use scaled size
+
             ctx.fillStyle = HANDLE_COLOR;
 
-            const handleDrawSize = HANDLE_SIZE * 2;
+            // Draw square resize handles
             for (const type of ['tl', 'tr', 'bl', 'br']) {
-                 ctx.fillRect(handles[type].x - HANDLE_SIZE, handles[type].y - HANDLE_SIZE, handleDrawSize, handleDrawSize);
+                 ctx.fillRect(handles[type].x - gameState.scaledHandleSize, handles[type].y - gameState.scaledHandleSize, scaledHandleDrawSize, scaledHandleDrawSize);
             }
 
+            // Draw circular rotate handle
             ctx.beginPath();
-            ctx.arc(handles.rotate.x, handles.rotate.y, HANDLE_SIZE * ROTATE_HANDLE_SIZE_FACTOR, 0, Math.PI * 2);
+            ctx.arc(handles.rotate.x, handles.rotate.y, gameState.scaledHandleSize * ROTATE_HANDLE_SIZE_FACTOR, 0, Math.PI * 2); // Use scaled size
             ctx.fill();
 
+            // Draw line from center to rotate handle
             ctx.beginPath();
             ctx.moveTo(handles.center.x, handles.center.y);
             ctx.lineTo(handles.rotate.x, handles.rotate.y);
             ctx.strokeStyle = HANDLE_COLOR;
-            ctx.lineWidth = 1;
+            ctx.lineWidth = 1; // Keep fixed
             ctx.setLineDash([2, 2]);
             ctx.stroke();
             ctx.setLineDash([]);
         }
     };
 
-    // --- Editor Logic (Pasted from previous version) ---
+    // --- Editor Logic ---
     const editor = {
         resetSelectionAndHistory: () => { editorState.selectedItems = []; editor.resetSelectionAndDragging(); editorState.history = []; editorState.historyIndex = -1; uiManager.updateBrickPropertiesUI(); },
         resetSelectionAndDragging: () => { editorState.draggingHandle = null; editorState.isDraggingSelection = false; editorState.isMarqueeSelecting = false; editorState.originalItemStates = []; uiManager.updateMarqueeBox(); uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y); },
-        addBrick: (type = 'static') => { if (gameState.mode !== 'editor' || !editorState.contextMenuTarget || editorState.contextMenuTarget.type !== 'empty') return; historyManager.saveState(); const centerX = editorState.contextMenuTarget.x || editorState.mouse.x; const centerY = editorState.contextMenuTarget.y || editorState.mouse.y; const width = 100; const height = 20; const initialX = centerX - width / 2; const initialY = centerY - height / 2; const newBrick = { x: initialX, y: initialY, width: width, height: height, angle: 0, isKillBrick: type === 'kill', movementType: (type === 'vertical' || type === 'horizontal') ? type : null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED, initialX: initialX, initialY: initialY }; gameState.bricks.push(newBrick); editorState.selectedItems = [{ type: 'brick', index: gameState.bricks.length - 1 }]; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
+        // *** MODIFIED: Adds brick with scaled dimensions ***
+        addBrick: (type = 'static') => {
+            if (gameState.mode !== 'editor' || !editorState.contextMenuTarget || editorState.contextMenuTarget.type !== 'empty') return;
+
+            historyManager.saveState();
+
+            // Use current scales
+            const scaleX = gameState.lastScaleX;
+            const scaleY = gameState.lastScaleY;
+            const scaleMin = gameState.lastScaleMin;
+
+            // Position where clicked (already scaled screen coords)
+            const scaledCenterX = editorState.contextMenuTarget.x || editorState.mouse.x;
+            const scaledCenterY = editorState.contextMenuTarget.y || editorState.mouse.y;
+
+            // Calculate scaled dimensions from base constants
+            const baseWidth = 100; // Base width for new bricks
+            const baseHeight = 20; // Base height for new bricks
+            const scaledWidth = Math.max(gameState.scaledMinBrickDimension, baseWidth * scaleX);
+            const scaledHeight = Math.max(gameState.scaledMinBrickDimension, baseHeight * scaleY);
+
+            // Calculate scaled top-left position
+            const scaledX = scaledCenterX - scaledWidth / 2;
+            const scaledY = scaledCenterY - scaledHeight / 2;
+
+            // Scale default move range
+            let scaledMoveRange = BASE_DEFAULT_MOVE_RANGE;
+             if (type === 'horizontal') scaledMoveRange *= scaleX;
+             else if (type === 'vertical') scaledMoveRange *= scaleY;
+
+            // Create brick object with *scaled* values for gameState
+            const newBrick = {
+                x: scaledX,
+                y: scaledY,
+                width: scaledWidth,
+                height: scaledHeight,
+                angle: 0,
+                isKillBrick: type === 'kill',
+                movementType: (type === 'vertical' || type === 'horizontal') ? type : null,
+                moveRange: scaledMoveRange, // Scaled range
+                moveSpeed: DEFAULT_MOVE_SPEED,
+                initialX: scaledX, // Scaled initial position
+                initialY: scaledY,
+                baseWidth: baseWidth, // Store unscaled base size
+                baseHeight: baseHeight,
+            };
+
+            gameState.bricks.push(newBrick);
+            editorState.selectedItems = [{ type: 'brick', index: gameState.bricks.length - 1 }];
+            editor.resetSelectionAndDragging();
+            uiManager.updateBrickPropertiesUI();
+            drawing.draw();
+        },
         toggleKillBrick: (index) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); const brick = gameState.bricks[index]; brick.isKillBrick = !brick.isKillBrick; editor.ensureItemSelected({ type: 'brick', index: index }); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
-        setMovementType: (index, type) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); const brick = gameState.bricks[index]; if (type === null) { brick.movementType = null; if (brick.initialX !== undefined) brick.x = brick.initialX; if (brick.initialY !== undefined) brick.y = brick.initialY; } else { if (brick.movementType !== type || brick.initialX === undefined || brick.initialY === undefined) { brick.initialX = brick.x; brick.initialY = brick.y; } brick.movementType = type; brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE; brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED; const levelData = levelManager.levels[gameState.currentLevelIndex]; const savedWidth = levelData?.savedCanvasWidth || canvas.width; const savedHeight = levelData?.savedCanvasHeight || canvas.height; const scaleX = (savedWidth > 0) ? canvas.width / savedWidth : 1; const scaleY = (savedHeight > 0) ? canvas.height / savedHeight : 1; if (brick.movementType === 'horizontal') { brick.moveRange = (brick.moveRange ?? DEFAULT_MOVE_RANGE) * scaleX; } else if (brick.movementType === 'vertical') { brick.moveRange = (brick.moveRange ?? DEFAULT_MOVE_RANGE) * scaleY; } } editor.ensureItemSelected({ type: 'brick', index: index }); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
+        // *** MODIFIED: Applies scaling when setting mover type ***
+        setMovementType: (index, type) => {
+            if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return;
+            historyManager.saveState();
+            const brick = gameState.bricks[index]; // Brick has scaled values
+
+            if (type === null) {
+                brick.movementType = null;
+                if (brick.initialX !== undefined) brick.x = brick.initialX; // Reset to scaled initial pos
+                if (brick.initialY !== undefined) brick.y = brick.initialY;
+            } else {
+                 // Set initial position if it wasn't a mover before or type changes
+                if (brick.movementType !== type || brick.initialX === undefined || brick.initialY === undefined) {
+                    brick.initialX = brick.x; // Store current scaled pos as initial
+                    brick.initialY = brick.y;
+                }
+                brick.movementType = type;
+                brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED;
+
+                // Calculate scaled move range from base default
+                const scaleX = gameState.lastScaleX;
+                const scaleY = gameState.lastScaleY;
+                let scaledMoveRange = BASE_DEFAULT_MOVE_RANGE;
+                if (brick.movementType === 'horizontal') {
+                    scaledMoveRange *= scaleX;
+                } else if (brick.movementType === 'vertical') {
+                    scaledMoveRange *= scaleY;
+                }
+                 // Use existing scaled range if available, otherwise use calculated default scaled range
+                 // This logic might need refinement - should toggling type reset the range? Let's assume yes for now.
+                 brick.moveRange = scaledMoveRange;
+
+            }
+            editor.ensureItemSelected({ type: 'brick', index: index });
+            uiManager.updateBrickPropertiesUI(); // Update properties panel (shows scaled range)
+            drawing.draw();
+        },
         deleteSingleBrick: (index) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); gameState.bricks.splice(index, 1); editorState.selectedItems = editorState.selectedItems .filter(item => !(item.type === 'brick' && item.index === index)) .map(item => { if (item.type === 'brick' && item.index > index) { item.index--; } return item; }); editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
         deleteSelectedItems: () => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return; historyManager.saveState(); const itemsToDelete = editorState.selectedItems.filter(item => item.type === 'brick'); const triedToDeletePlayer = editorState.selectedItems.some(item => item.type === 'player'); const triedToDeleteHole = editorState.selectedItems.some(item => item.type === 'hole'); if (itemsToDelete.length === 0 && (triedToDeletePlayer || triedToDeleteHole)) { uiManager.showMessage("Player and Hole cannot be deleted.", 1500); return; } if (itemsToDelete.length === 0) return; const brickIndicesToDelete = itemsToDelete.map(item => item.index).sort((a, b) => b - a); brickIndicesToDelete.forEach(index => { if (index >= 0 && index < gameState.bricks.length) { gameState.bricks.splice(index, 1); } else { console.warn("Attempted to delete invalid brick index during multi-delete:", index); } }); editorState.selectedItems = []; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); if (triedToDeletePlayer || triedToDeleteHole) { uiManager.showMessage("Deleted selected brick(s). Player and Hole cannot be deleted.", 2000); } },
-        handleCopy: () => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return; editorState.clipboard = editorState.selectedItems .filter(item => item.type === 'brick') .map(item => { if (item.index !== undefined && item.index >= 0 && item.index < gameState.bricks.length) { return utils.deepClone(gameState.bricks[item.index]); } return null; }) .filter(data => data !== null); if (editorState.clipboard.length > 0) { uiManager.showMessage(`Copied ${editorState.clipboard.length} brick(s).`, 1000); } else { uiManager.showMessage(`Cannot copy Player or Hole.`, 1000); } },
-        handlePaste: () => { if (gameState.mode !== 'editor' || editorState.clipboard.length === 0) return; historyManager.saveState(); const newSelection = []; editorState.clipboard.forEach(itemData => { if (itemData) { const newItem = utils.deepClone(itemData); newItem.x += PASTE_OFFSET; newItem.y += PASTE_OFFSET; if (newItem.initialX !== undefined) newItem.initialX += PASTE_OFFSET; if (newItem.initialY !== undefined) newItem.initialY += PASTE_OFFSET; gameState.bricks.push(newItem); newSelection.push({ type: 'brick', index: gameState.bricks.length - 1 }); } }); editorState.selectedItems = newSelection; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
+        // *** MODIFIED: Copies unscaled data ***
+        handleCopy: () => {
+            if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return;
+            const scaleX = gameState.lastScaleX || 1;
+            const scaleY = gameState.lastScaleY || 1;
+            editorState.clipboard = []; // Stores unscaled data
+
+            editorState.selectedItems.forEach(item => {
+                if (item.type === 'brick') {
+                     const brick = gameState.bricks[item.index]; // Get scaled brick
+                     if (brick) {
+                         // Create unscaled copy for clipboard
+                         let unscaledMoveRange = brick.moveRange;
+                         if (brick.movementType === 'horizontal' && scaleX !== 0) unscaledMoveRange /= scaleX;
+                         else if (brick.movementType === 'vertical' && scaleY !== 0) unscaledMoveRange /= scaleY;
+
+                         editorState.clipboard.push({
+                             x: brick.x / scaleX, // Unscale position for clipboard relative to reference
+                             y: brick.y / scaleY,
+                             width: brick.baseWidth !== undefined ? brick.baseWidth : brick.width / scaleX, // Prefer baseWidth
+                             height: brick.baseHeight !== undefined ? brick.baseHeight : brick.height / scaleY,
+                             angle: brick.angle,
+                             isKillBrick: brick.isKillBrick,
+                             movementType: brick.movementType,
+                             moveRange: unscaledMoveRange,
+                             moveSpeed: brick.moveSpeed,
+                             initialX: brick.initialX !== undefined ? brick.initialX / scaleX : undefined,
+                             initialY: brick.initialY !== undefined ? brick.initialY / scaleY : undefined,
+                         });
+                     }
+                }
+            });
+
+            if (editorState.clipboard.length > 0) {
+                uiManager.showMessage(`Copied ${editorState.clipboard.length} brick(s).`, 1000);
+            } else {
+                 uiManager.showMessage(`Cannot copy Player or Hole.`, 1000);
+            }
+        },
+        // *** MODIFIED: Pastes unscaled data, then scales it ***
+        handlePaste: () => {
+            if (gameState.mode !== 'editor' || editorState.clipboard.length === 0) return;
+            historyManager.saveState();
+
+            const scaleX = gameState.lastScaleX;
+            const scaleY = gameState.lastScaleY;
+            const scaleMin = gameState.lastScaleMin;
+            const newSelection = [];
+
+            editorState.clipboard.forEach(unscaledData => {
+                if (unscaledData) {
+                    // Apply current scaling to the unscaled clipboard data
+                    const scaledWidth = Math.max(gameState.scaledMinBrickDimension, unscaledData.width * scaleX);
+                    const scaledHeight = Math.max(gameState.scaledMinBrickDimension, unscaledData.height * scaleY);
+                    const scaledX = (unscaledData.x * scaleX) + PASTE_OFFSET; // Offset scaled position
+                    const scaledY = (unscaledData.y * scaleY) + PASTE_OFFSET;
+                    const scaledInitialX = unscaledData.initialX !== undefined ? (unscaledData.initialX * scaleX) + PASTE_OFFSET : scaledX;
+                    const scaledInitialY = unscaledData.initialY !== undefined ? (unscaledData.initialY * scaleY) + PASTE_OFFSET : scaledY;
+
+                    let scaledMoveRange = unscaledData.moveRange;
+                    if (unscaledData.movementType === 'horizontal') scaledMoveRange *= scaleX;
+                    else if (unscaledData.movementType === 'vertical') scaledMoveRange *= scaleY;
+
+                    const newItem = {
+                        ...unscaledData, // Copy angle, type, speed etc.
+                        x: scaledX,
+                        y: scaledY,
+                        width: scaledWidth,
+                        height: scaledHeight,
+                        initialX: scaledInitialX,
+                        initialY: scaledInitialY,
+                        moveRange: scaledMoveRange,
+                        baseWidth: unscaledData.width, // Store original unscaled size
+                        baseHeight: unscaledData.height,
+                    };
+                    gameState.bricks.push(newItem);
+                    newSelection.push({ type: 'brick', index: gameState.bricks.length - 1 });
+                }
+            });
+
+            editorState.selectedItems = newSelection;
+            editor.resetSelectionAndDragging();
+            uiManager.updateBrickPropertiesUI();
+            drawing.draw();
+        },
         handleNudge: (dx, dy) => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0 || (dx === 0 && dy === 0)) return; if (!editorState.isNudging) { historyManager.saveState(); editorState.isNudging = true; } editorState.selectedItems.forEach(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (brick) { brick.x += dx; brick.y += dy; if (brick.initialX !== undefined) brick.initialX += dx; if (brick.initialY !== undefined) brick.initialY += dy; } } else if (item.type === 'player') { gameState.player.x += dx; gameState.player.y += dy; if (gameState.ball.onPlayer) gameLogic.resetBallPosition(); } else if (item.type === 'hole') { gameState.hole.x += dx; gameState.hole.y += dy; } }); drawing.draw(); },
         selectItem: (itemToSelect, ctrlPressed) => { if (!itemToSelect) return; const alreadySelected = editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index ); if (ctrlPressed) { if (alreadySelected) { editorState.selectedItems = editorState.selectedItems.filter(sel => !(sel.type === itemToSelect.type && sel.index === itemToSelect.index) ); } else { editorState.selectedItems.push(itemToSelect); } } else { if (!alreadySelected || editorState.selectedItems.length > 1) { editorState.selectedItems = [itemToSelect]; } } uiManager.updateBrickPropertiesUI(); },
         ensureItemSelected: (itemToSelect) => { if (!editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index)) { editorState.selectedItems.push(itemToSelect); uiManager.updateBrickPropertiesUI(); } },
-        getItemAtPoint: (px, py) => { for (let i = gameState.bricks.length - 1; i >= 0; i--) { if (utils.isPointInRotatedRect(px, py, gameState.bricks[i])) { return { type: 'brick', index: i }; } } const player = gameState.player; const headCenter = { x: player.x + player.width / 2, y: player.y - PLAYER_HEAD_RADIUS }; const distSqToHead = Vec.lenSq(Vec.sub({ x: px, y: py }, headCenter)); const isOverHead = distSqToHead <= (PLAYER_HEAD_RADIUS * PLAYER_HEAD_RADIUS); const isOverBody = px >= player.x && px <= player.x + player.width && py >= player.y && py <= player.y + player.height; if (isOverHead || isOverBody) { return { type: 'player', index: null }; } const distSqToHole = Vec.lenSq(Vec.sub({ x: px, y: py }, gameState.hole)); if (distSqToHole <= (gameState.hole.radius * gameState.hole.radius)) { return { type: 'hole', index: null }; } return null; },
-        isPointOverSelection: (px, py) => { return editorState.selectedItems.some(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick && utils.isPointInRotatedRect(px, py, brick); } else if (item.type === 'player') { const player = gameState.player; const headCenter = { x: player.x + player.width / 2, y: player.y - PLAYER_HEAD_RADIUS }; const distSqToHead = Vec.lenSq(Vec.sub({ x: px, y: py }, headCenter)); const isOverHead = distSqToHead <= (PLAYER_HEAD_RADIUS * PLAYER_HEAD_RADIUS); const isOverBody = px >= player.x && px <= player.x + player.width && py >= player.y && py <= player.y + player.height; return isOverHead || isOverBody; } else if (item.type === 'hole') { const distSqToHole = Vec.lenSq(Vec.sub({ x: px, y: py }, gameState.hole)); return distSqToHole <= (gameState.hole.radius * gameState.hole.radius); } return false; }); },
-        getHandleAtPoint: (px, py) => { if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return null; } const brickIndex = editorState.selectedItems[0].index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return null; const brick = gameState.bricks[brickIndex]; if (!brick) return null; const handles = utils.getBrickHandles(brick); const handleHitRadiusSq = (HANDLE_SIZE * 1.5) * (HANDLE_SIZE * 1.5); if (Vec.lenSq(Vec.sub({ x: px, y: py }, handles.rotate)) <= handleHitRadiusSq * (ROTATE_HANDLE_SIZE_FACTOR * ROTATE_HANDLE_SIZE_FACTOR)) { return { type: 'rotate', itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; } for (const type of ['tl', 'tr', 'bl', 'br']) { if (Vec.lenSq(Vec.sub({ x: px, y: py }, handles[type])) <= handleHitRadiusSq) { return { type: type, itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; } } return null; },
-        finalizeMarqueeSelection: (ctrlPressed) => { const marqueeRect = { x: Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x), y: Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y), width: Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x), height: Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y) }; if (marqueeRect.width < 5 && marqueeRect.height < 5) { if (!ctrlPressed) { editorState.selectedItems = []; } uiManager.updateBrickPropertiesUI(); return; } const newlySelected = []; gameState.bricks.forEach((brick, index) => { const brickBounds = utils.getRectBoundingBox(brick); if (utils.doRectsOverlap(marqueeRect, brickBounds)) { newlySelected.push({ type: 'brick', index: index }); } }); const player = gameState.player; const playerBounds = { x: player.x, y: player.y - PLAYER_HEAD_RADIUS, width: player.width, height: player.height + PLAYER_HEAD_RADIUS }; if (utils.doRectsOverlap(marqueeRect, playerBounds)) { newlySelected.push({ type: 'player', index: null }); } const holeBounds = { x: gameState.hole.x - gameState.hole.radius, y: gameState.hole.y - gameState.hole.radius, width: gameState.hole.radius * 2, height: gameState.hole.radius * 2 }; if (utils.doRectsOverlap(marqueeRect, holeBounds)) { newlySelected.push({ type: 'hole', index: null }); } if (ctrlPressed) { newlySelected.forEach(newItem => { if (!editorState.selectedItems.some(sel => sel.type === newItem.type && sel.index === newItem.index)) { editorState.selectedItems.push(newItem); } }); } else { editorState.selectedItems = newlySelected; } uiManager.updateBrickPropertiesUI(); },
+        getItemAtPoint: (px, py) => { for (let i = gameState.bricks.length - 1; i >= 0; i--) { if (utils.isPointInRotatedRect(px, py, gameState.bricks[i])) { return { type: 'brick', index: i }; } } const player = gameState.player; const headCenter = { x: player.x + player.width / 2, y: player.y - player.headRadius }; const distSqToHead = Vec.lenSq(Vec.sub({ x: px, y: py }, headCenter)); const isOverHead = distSqToHead <= (player.headRadius * player.headRadius); const isOverBody = px >= player.x && px <= player.x + player.width && py >= player.y && py <= player.y + player.height; if (isOverHead || isOverBody) { return { type: 'player', index: null }; } const distSqToHole = Vec.lenSq(Vec.sub({ x: px, y: py }, gameState.hole)); if (distSqToHole <= (gameState.hole.radius * gameState.hole.radius)) { return { type: 'hole', index: null }; } return null; },
+        isPointOverSelection: (px, py) => { return editorState.selectedItems.some(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick && utils.isPointInRotatedRect(px, py, brick); } else if (item.type === 'player') { const player = gameState.player; const headCenter = { x: player.x + player.width / 2, y: player.y - player.headRadius }; const distSqToHead = Vec.lenSq(Vec.sub({ x: px, y: py }, headCenter)); const isOverHead = distSqToHead <= (player.headRadius * player.headRadius); const isOverBody = px >= player.x && px <= player.x + player.width && py >= player.y && py <= player.y + player.height; return isOverHead || isOverBody; } else if (item.type === 'hole') { const distSqToHole = Vec.lenSq(Vec.sub({ x: px, y: py }, gameState.hole)); return distSqToHole <= (gameState.hole.radius * gameState.hole.radius); } return false; }); },
+        // *** MODIFIED: Uses scaled handle size ***
+        getHandleAtPoint: (px, py) => {
+             if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return null; }
+             const brickIndex = editorState.selectedItems[0].index;
+             if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return null;
+             const brick = gameState.bricks[brickIndex]; // Scaled brick
+             if (!brick) return null;
+             const handles = utils.getBrickHandles(brick); // Scaled handle positions
+             const handleHitRadiusSq = (gameState.scaledHandleSize * 1.5) * (gameState.scaledHandleSize * 1.5); // Scaled hit radius
+
+             if (Vec.lenSq(Vec.sub({ x: px, y: py }, handles.rotate)) <= handleHitRadiusSq * (ROTATE_HANDLE_SIZE_FACTOR * ROTATE_HANDLE_SIZE_FACTOR)) {
+                 return { type: 'rotate', itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; // Save scaled state at drag start
+             }
+             for (const type of ['tl', 'tr', 'bl', 'br']) {
+                 if (Vec.lenSq(Vec.sub({ x: px, y: py }, handles[type])) <= handleHitRadiusSq) {
+                     return { type: type, itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; // Save scaled state at drag start
+                 }
+             }
+             return null;
+         },
+        finalizeMarqueeSelection: (ctrlPressed) => { const marqueeRect = { x: Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x), y: Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y), width: Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x), height: Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y) }; if (marqueeRect.width < 5 && marqueeRect.height < 5) { if (!ctrlPressed) { editorState.selectedItems = []; } uiManager.updateBrickPropertiesUI(); return; } const newlySelected = []; gameState.bricks.forEach((brick, index) => { const brickBounds = utils.getRectBoundingBox(brick); if (utils.doRectsOverlap(marqueeRect, brickBounds)) { newlySelected.push({ type: 'brick', index: index }); } }); const player = gameState.player; const playerBounds = { x: player.x, y: player.y - player.headRadius, width: player.width, height: player.height + player.headRadius }; if (utils.doRectsOverlap(marqueeRect, playerBounds)) { newlySelected.push({ type: 'player', index: null }); } const holeBounds = { x: gameState.hole.x - gameState.hole.radius, y: gameState.hole.y - gameState.hole.radius, width: gameState.hole.radius * 2, height: gameState.hole.radius * 2 }; if (utils.doRectsOverlap(marqueeRect, holeBounds)) { newlySelected.push({ type: 'hole', index: null }); } if (ctrlPressed) { newlySelected.forEach(newItem => { if (!editorState.selectedItems.some(sel => sel.type === newItem.type && sel.index === newItem.index)) { editorState.selectedItems.push(newItem); } }); } else { editorState.selectedItems = newlySelected; } uiManager.updateBrickPropertiesUI(); },
         updateItemsDuringDrag: (dx, dy) => { editorState.selectedItems.forEach((item, i) => { const origState = editorState.originalItemStates[i]; if (!origState) return; if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (brick) { brick.x = origState.x + dx; brick.y = origState.y + dy; if (brick.initialX !== undefined) brick.initialX = origState.initialX + dx; if (brick.initialY !== undefined) brick.initialY = origState.initialY + dy; } } else if (item.type === 'player') { gameState.player.x = origState.x + dx; gameState.player.y = origState.y + dy; if (gameState.ball.onPlayer) gameLogic.resetBallPosition(); } else if (item.type === 'hole') { gameState.hole.x = origState.x + dx; gameState.hole.y = origState.y + dy; } }); },
-        updateBrickDuringResize: (handleType, currentMouseX, currentMouseY) => { if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return; const brickIndex = editorState.draggingHandle.itemRef.index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const origState = editorState.draggingHandle.startBrickState; const origAngle = origState.angle || 0; const cosA = Math.cos(-origAngle); const sinA = Math.sin(-origAngle); const ocx = origState.x + origState.width / 2; const ocy = origState.y + origState.height / 2; const dxWorld = currentMouseX - ocx; const dyWorld = currentMouseY - ocy; const localMx = dxWorld * cosA - dyWorld * sinA; const localMy = dxWorld * sinA + dyWorld * cosA; let newHalfWidth, newHalfHeight; switch (handleType) { case 'br': newHalfWidth = localMx; newHalfHeight = localMy; break; case 'bl': newHalfWidth = -localMx; newHalfHeight = localMy; break; case 'tr': newHalfWidth = localMx; newHalfHeight = -localMy; break; case 'tl': newHalfWidth = -localMx; newHalfHeight = -localMy; break; default: return; } newHalfWidth = Math.max(MIN_BRICK_DIMENSION / 2, newHalfWidth); newHalfHeight = Math.max(MIN_BRICK_DIMENSION / 2, newHalfHeight); const newWidth = 2 * newHalfWidth; const newHeight = 2 * newHalfHeight; const centerShiftXLocal = (newWidth - origState.width) / 2; const centerShiftYLocal = (newHeight - origState.height) / 2; let shiftFactorX = 0, shiftFactorY = 0; switch(handleType) { case 'tl': shiftFactorX = -1; shiftFactorY = -1; break; case 'tr': shiftFactorX = 1; shiftFactorY = -1; break; case 'bl': shiftFactorX = -1; shiftFactorY = 1; break; case 'br': shiftFactorX = 1; shiftFactorY = 1; break; } const finalShiftLocalX = centerShiftXLocal * shiftFactorX; const finalShiftLocalY = centerShiftYLocal * shiftFactorY; const cosARot = Math.cos(origAngle); const sinARot = Math.sin(origAngle); const centerShiftWorldX = finalShiftLocalX * cosARot - finalShiftLocalY * sinARot; const centerShiftWorldY = finalShiftLocalX * sinARot + finalShiftLocalY * cosARot; const newCx = ocx + centerShiftWorldX; const newCy = ocy + centerShiftWorldY; brick.width = newWidth; brick.height = newHeight; brick.angle = origAngle; const localTLX = -newWidth / 2; const localTLY = -newHeight / 2; brick.x = newCx + (localTLX * cosARot - localTLY * sinARot); brick.y = newCy + (localTLX * sinARot + localTLY * cosARot); if (brick.initialX !== undefined) { brick.initialX = brick.x; } if (brick.initialY !== undefined) { brick.initialY = brick.y; } },
-        updateBrickDuringRotate: (currentMouseX, currentMouseY) => { if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return; const brickIndex = editorState.draggingHandle.itemRef.index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const origState = editorState.draggingHandle.startBrickState; const center = utils.getBrickHandles(origState).center; const startAngle = Math.atan2(editorState.dragStart.y - center.y, editorState.dragStart.x - center.x); const currentAngle = Math.atan2(currentMouseY - center.y, currentMouseX - center.x); brick.angle = origState.angle + (currentAngle - startAngle); brick.x = origState.x; brick.y = origState.y; brick.width = origState.width; brick.height = origState.height; },
-        finalizeItemManipulation: () => { if (editorState.draggingHandle || editorState.isDraggingSelection) { editorState.selectedItems.forEach(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (brick) { brick.initialX = brick.x; brick.initialY = brick.y; } } }); const previousState = editorState.history[editorState.historyIndex]; const currentState = historyManager.getCurrentStateSnapshot(); if (previousState && utils.statesAreEqual(previousState, currentState)) { /* No change */ } else { /* State changed */ } } },
-        handlePropertyChange: (event) => { if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return; } const brickIndex = editorState.selectedItems[0].index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; if (!brick || !brick.movementType) return; const propertyName = event.target.name; const value = parseFloat(event.target.value); if (isNaN(value) || value < 0) { console.warn(`Invalid value entered for ${propertyName}:`, event.target.value); uiManager.updateBrickPropertiesUI(); return; } let valueToStore = value; if (propertyName === 'moveRange') { const levelData = levelManager.levels[gameState.currentLevelIndex]; const savedWidth = levelData?.savedCanvasWidth || canvas.width; const savedHeight = levelData?.savedCanvasHeight || canvas.height; const scaleX = (savedWidth > 0) ? canvas.width / savedWidth : 1; const scaleY = (savedHeight > 0) ? canvas.height / savedHeight : 1; if (brick.movementType === 'horizontal' && scaleX !== 0) { valueToStore = value / scaleX; } else if (brick.movementType === 'vertical' && scaleY !== 0) { valueToStore = value / scaleY; } } if (brick[propertyName] === valueToStore) { if (propertyName === 'moveRange' && brick[propertyName].toFixed(1) !== value.toFixed(1)) { uiManager.updateBrickPropertiesUI(); } return; } historyManager.saveState(); brick[propertyName] = valueToStore; editorState.isUpdatingPropertiesFromInput = true; drawing.draw(); uiManager.updateBrickPropertiesUI(); editorState.isUpdatingPropertiesFromInput = false; }
+        // *** MODIFIED: Updates scaled dimensions and stores unscaled base dimensions ***
+        updateBrickDuringResize: (handleType, currentMouseX, currentMouseY) => {
+            if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return;
+            const brickIndex = editorState.draggingHandle.itemRef.index;
+            if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return;
+
+            const brick = gameState.bricks[brickIndex]; // Current scaled brick state
+            const origState = editorState.draggingHandle.startBrickState; // Scaled state at drag start
+            const origAngle = origState.angle || 0;
+            const cosA = Math.cos(-origAngle);
+            const sinA = Math.sin(-origAngle);
+
+            const ocx = origState.x + origState.width / 2;
+            const ocy = origState.y + origState.height / 2;
+
+            const dxWorld = currentMouseX - ocx;
+            const dyWorld = currentMouseY - ocy;
+
+            const localMx = dxWorld * cosA - dyWorld * sinA;
+            const localMy = dxWorld * sinA + dyWorld * cosA;
+
+            let newHalfWidth, newHalfHeight; // These will be scaled half dimensions
+
+            switch (handleType) {
+                case 'br': newHalfWidth = localMx; newHalfHeight = localMy; break;
+                case 'bl': newHalfWidth = -localMx; newHalfHeight = localMy; break;
+                case 'tr': newHalfWidth = localMx; newHalfHeight = -localMy; break;
+                case 'tl': newHalfWidth = -localMx; newHalfHeight = -localMy; break;
+                default: return;
+            }
+
+            // Enforce minimum scaled dimensions
+            const minScaledDim = gameState.scaledMinBrickDimension;
+            newHalfWidth = Math.max(minScaledDim / 2, newHalfWidth);
+            newHalfHeight = Math.max(minScaledDim / 2, newHalfHeight);
+
+            const newWidth = 2 * newHalfWidth; // New scaled width
+            const newHeight = 2 * newHalfHeight; // New scaled height
+
+            // --- Calculate new center and top-left based on scaled dimensions ---
+            const centerShiftXLocal = (newWidth - origState.width) / 2;
+            const centerShiftYLocal = (newHeight - origState.height) / 2;
+            let shiftFactorX = 0, shiftFactorY = 0;
+            switch(handleType) { case 'tl': shiftFactorX = -1; shiftFactorY = -1; break; case 'tr': shiftFactorX = 1; shiftFactorY = -1; break; case 'bl': shiftFactorX = -1; shiftFactorY = 1; break; case 'br': shiftFactorX = 1; shiftFactorY = 1; break; }
+            const finalShiftLocalX = centerShiftXLocal * shiftFactorX;
+            const finalShiftLocalY = centerShiftYLocal * shiftFactorY;
+            const cosARot = Math.cos(origAngle); const sinARot = Math.sin(origAngle);
+            const centerShiftWorldX = finalShiftLocalX * cosARot - finalShiftLocalY * sinARot;
+            const centerShiftWorldY = finalShiftLocalX * sinARot + finalShiftLocalY * cosARot;
+            const newCx = ocx + centerShiftWorldX;
+            const newCy = ocy + centerShiftWorldY;
+            const localTLX = -newWidth / 2; const localTLY = -newHeight / 2;
+            const newX = newCx + (localTLX * cosARot - localTLY * sinARot);
+            const newY = newCy + (localTLX * sinARot + localTLY * cosARot);
+            // --- End center/top-left calculation ---
+
+            // Update scaled values in gameState
+            brick.width = newWidth;
+            brick.height = newHeight;
+            brick.angle = origAngle;
+            brick.x = newX;
+            brick.y = newY;
+
+            // *** Store the corresponding *unscaled* base dimensions ***
+            const scaleX = gameState.lastScaleX || 1;
+            const scaleY = gameState.lastScaleY || 1;
+            brick.baseWidth = newWidth / scaleX;
+            brick.baseHeight = newHeight / scaleY;
+
+
+            // Update initial position to match current position after resize
+            if (brick.initialX !== undefined) brick.initialX = brick.x;
+            if (brick.initialY !== undefined) brick.initialY = brick.y;
+        },
+        updateBrickDuringRotate: (currentMouseX, currentMouseY) => { if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return; const brickIndex = editorState.draggingHandle.itemRef.index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const origState = editorState.draggingHandle.startBrickState; const center = utils.getBrickHandles(origState).center; const startAngle = Math.atan2(editorState.dragStart.y - center.y, editorState.dragStart.x - center.x); const currentAngle = Math.atan2(currentMouseY - center.y, currentMouseX - center.x); brick.angle = origState.angle + (currentAngle - startAngle); brick.x = origState.x; brick.y = origState.y; brick.width = origState.width; brick.height = origState.height; /* Rotation doesn't change initial pos or base dims */ },
+        // *** MODIFIED: Updates scaled initial positions ***
+        finalizeItemManipulation: () => {
+            if (editorState.draggingHandle || editorState.isDraggingSelection) {
+                editorState.selectedItems.forEach(item => {
+                    if (item.type === 'brick') {
+                        const brick = gameState.bricks[item.index];
+                        if (brick) {
+                            // Update scaled initial positions after manipulation
+                            brick.initialX = brick.x;
+                            brick.initialY = brick.y;
+                        }
+                    }
+                });
+                // History saving is handled by saveState at the start of the manipulation
+            }
+        },
+        // *** MODIFIED: Handles property change for scaled range ***
+        handlePropertyChange: (event) => {
+            if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return; }
+            const brickIndex = editorState.selectedItems[0].index;
+            if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return;
+            const brick = gameState.bricks[brickIndex]; // Scaled brick
+            if (!brick || !brick.movementType) return;
+
+            const propertyName = event.target.name;
+            const value = parseFloat(event.target.value); // Value entered by user (represents scaled)
+
+            if (isNaN(value) || value < 0) {
+                console.warn(`Invalid value entered for ${propertyName}:`, event.target.value);
+                uiManager.updateBrickPropertiesUI(); // Reset input to current scaled value
+                return;
+            }
+
+            let valueToStore = value; // This will be the scaled value for gameState
+
+            // Check if the scaled value actually changed
+            if (brick[propertyName] === valueToStore && propertyName === 'moveSpeed') {
+                 return; // No change for speed
+            }
+             // For moveRange, compare with current scaled value, allowing for float precision
+             if (propertyName === 'moveRange' && Math.abs(brick.moveRange - valueToStore) < 0.01) {
+                 // If only formatting differs, update UI but don't save history
+                 if (brick.moveRange.toFixed(1) !== value.toFixed(1)) {
+                     uiManager.updateBrickPropertiesUI();
+                 }
+                 return;
+             }
+
+
+            historyManager.saveState(); // Save state before applying change
+            brick[propertyName] = valueToStore; // Store the new scaled value in gameState
+
+            editorState.isUpdatingPropertiesFromInput = true;
+            drawing.draw(); // Redraw to show updated range indicator
+            uiManager.updateBrickPropertiesUI(); // Update UI to formatted scaled value
+            editorState.isUpdatingPropertiesFromInput = false;
+        }
     };
-    // --- End full editor object ---
 
 
-    // --- Event Handlers (Pasted from previous version) ---
+    // --- Event Handlers ---
     const eventHandlers = {
         handleResize: () => { utils.resizeCanvas(); },
         handleContextMenu: (e) => { e.preventDefault(); uiManager.hideContextMenu(); if (gameState.mode !== 'editor' || uiManager.isPointerOverUI(e.clientX, e.clientY)) { return; } const mx = e.clientX; const my = e.clientY; let targetItem = editor.getItemAtPoint(mx, my); let targetType = 'empty'; let targetIndex = null; if (targetItem) { targetType = targetItem.type; targetIndex = targetItem.index; if (!editorState.selectedItems.some(sel => sel.type === targetType && sel.index === targetIndex)) { editorState.selectedItems = [targetItem]; uiManager.updateBrickPropertiesUI(); drawing.draw(); } } else { editorState.selectedItems = []; uiManager.updateBrickPropertiesUI(); drawing.draw(); } editorState.contextMenuTarget = { type: targetType, index: targetIndex, x: mx, y: my }; uiManager.showContextMenu(mx, my); },
-        handleMouseDown: (e) => { if (e.button !== 0 || uiManager.isPointerOverUI(e.clientX, e.clientY)) { return; } editorState.mouse.down = true; editorState.mouse.x = e.clientX; editorState.mouse.y = e.clientY; editorState.mouse.dragStartX = editorState.mouse.x; editorState.mouse.dragStartY = editorState.mouse.y; uiManager.hideContextMenu(); if (gameState.mode === 'editor') { const mx = editorState.mouse.x; const my = editorState.mouse.y; const ctrlPressed = e.ctrlKey || e.metaKey; const clickedHandle = editor.getHandleAtPoint(mx, my); if (clickedHandle) { editorState.draggingHandle = clickedHandle; editorState.dragStart = { x: mx, y: my }; historyManager.saveState(); canvas.style.cursor = clickedHandle.type === 'rotate' ? 'grabbing' : (clickedHandle.type === 'tl' || clickedHandle.type === 'br') ? 'nwse-resize' : 'nesw-resize'; editorState.isDraggingSelection = false; editorState.isMarqueeSelecting = false; } else { const clickedItem = editor.getItemAtPoint(mx, my); if (clickedItem) { const isClickOnCurrentSelection = editor.isPointOverSelection(mx, my); if (!isClickOnCurrentSelection) { editor.selectItem(clickedItem, ctrlPressed); } else if (!ctrlPressed) { if (editorState.selectedItems.length > 1) { editor.selectItem(clickedItem, false); } } else { editor.selectItem(clickedItem, true); } if (editor.isPointOverSelection(mx, my)) { editorState.isDraggingSelection = true; editorState.dragStart = { x: mx, y: my }; editorState.originalItemStates = editorState.selectedItems.map(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick ? { ...utils.deepClone(brick), initialX: brick.initialX, initialY: brick.initialY } : null; } if (item.type === 'player') return utils.deepClone(gameState.player); if (item.type === 'hole') return utils.deepClone(gameState.hole); return null; }).filter(s => s !== null); historyManager.saveState(); canvas.style.cursor = 'move'; } editorState.isMarqueeSelecting = false; } else { if (!ctrlPressed) { editorState.selectedItems = []; uiManager.updateBrickPropertiesUI(); } editorState.isMarqueeSelecting = true; editorState.marqueeStart = { x: mx, y: my }; editorState.marqueeEnd = { x: mx, y: my }; uiManager.updateMarqueeBox(); canvas.style.cursor = 'crosshair'; editorState.isDraggingSelection = false; } } drawing.draw(); } else { if (gameState.ball.onPlayer) { editorState.aim.active = true; eventHandlers.updateAim(editorState.mouse.x, editorState.mouse.y); drawing.draw(); } } },
+        handleMouseDown: (e) => { if (e.button !== 0 || uiManager.isPointerOverUI(e.clientX, e.clientY)) { return; } editorState.mouse.down = true; editorState.mouse.x = e.clientX; editorState.mouse.y = e.clientY; editorState.mouse.dragStartX = editorState.mouse.x; editorState.mouse.dragStartY = editorState.mouse.y; uiManager.hideContextMenu(); if (gameState.mode === 'editor') { const mx = editorState.mouse.x; const my = editorState.mouse.y; const ctrlPressed = e.ctrlKey || e.metaKey; const clickedHandle = editor.getHandleAtPoint(mx, my); if (clickedHandle) { editorState.draggingHandle = clickedHandle; editorState.dragStart = { x: mx, y: my }; historyManager.saveState(); canvas.style.cursor = clickedHandle.type === 'rotate' ? 'grabbing' : (clickedHandle.type === 'tl' || clickedHandle.type === 'br') ? 'nwse-resize' : 'nesw-resize'; editorState.isDraggingSelection = false; editorState.isMarqueeSelecting = false; } else { const clickedItem = editor.getItemAtPoint(mx, my); if (clickedItem) { const isClickOnCurrentSelection = editor.isPointOverSelection(mx, my); if (!isClickOnCurrentSelection) { editor.selectItem(clickedItem, ctrlPressed); } else if (!ctrlPressed) { if (editorState.selectedItems.length > 1) { editor.selectItem(clickedItem, false); } } else { editor.selectItem(clickedItem, true); } if (editor.isPointOverSelection(mx, my)) { editorState.isDraggingSelection = true; editorState.dragStart = { x: mx, y: my }; editorState.originalItemStates = editorState.selectedItems.map(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick ? utils.deepClone(brick) : null; } if (item.type === 'player') return utils.deepClone(gameState.player); if (item.type === 'hole') return utils.deepClone(gameState.hole); return null; }).filter(s => s !== null); historyManager.saveState(); canvas.style.cursor = 'move'; } editorState.isMarqueeSelecting = false; } else { if (!ctrlPressed) { editorState.selectedItems = []; uiManager.updateBrickPropertiesUI(); } editorState.isMarqueeSelecting = true; editorState.marqueeStart = { x: mx, y: my }; editorState.marqueeEnd = { x: mx, y: my }; uiManager.updateMarqueeBox(); canvas.style.cursor = 'crosshair'; editorState.isDraggingSelection = false; } } drawing.draw(); } else { if (gameState.ball.onPlayer) { editorState.aim.active = true; eventHandlers.updateAim(editorState.mouse.x, editorState.mouse.y); drawing.draw(); } } },
         handleMouseMove: (e) => { editorState.mouse.x = e.clientX; editorState.mouse.y = e.clientY; const mx = editorState.mouse.x; const my = editorState.mouse.y; if (gameState.mode === 'editor') { if (editorState.mouse.down) { const dx = mx - editorState.dragStart.x; const dy = my - editorState.dragStart.y; if (editorState.draggingHandle) { const handleType = editorState.draggingHandle.type; if (handleType === 'rotate') { editor.updateBrickDuringRotate(mx, my); canvas.style.cursor = 'grabbing'; } else { editor.updateBrickDuringResize(handleType, mx, my); } drawing.draw(); } else if (editorState.isDraggingSelection) { canvas.style.cursor = 'move'; editor.updateItemsDuringDrag(dx, dy); drawing.draw(); } else if (editorState.isMarqueeSelecting) { canvas.style.cursor = 'crosshair'; editorState.marqueeEnd = { x: mx, y: my }; uiManager.updateMarqueeBox(); } } else { uiManager.updateCursorStyle(mx, my); } } else { if (editorState.aim.active && gameState.ball.onPlayer) { eventHandlers.updateAim(mx, my); drawing.draw(); } } },
         handleMouseUp: (e) => { if (e.button !== 0 || !editorState.mouse.down) return; editorState.mouse.down = false; if (gameState.mode === 'editor') { editor.finalizeItemManipulation(); if (editorState.isMarqueeSelecting) { editor.finalizeMarqueeSelection(e.ctrlKey || e.metaKey); } const dx = editorState.mouse.x - editorState.mouse.dragStartX; const dy = editorState.mouse.y - editorState.mouse.dragStartY; const isSimpleClick = Vec.lenSq({x: dx, y: dy}) < CLICK_THRESHOLD_SQ; if (isSimpleClick && (e.ctrlKey || e.metaKey)) { const clickedItem = editor.getItemAtPoint(e.clientX, e.clientY); if (clickedItem) { /* Selection handled in mousedown */ } } editor.resetSelectionAndDragging(); drawing.draw(); } else { if (editorState.aim.active && gameState.ball.onPlayer) { gameLogic.fireBall(); editorState.aim.active = false; drawing.draw(); } } uiManager.updateCursorStyle(e.clientX, e.clientY); },
         handleKeyDown: (e) => { if (uiManager.isPointerOverUI(editorState.mouse.x, editorState.mouse.y)) { const isInputFocused = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA'); if (!isInputFocused && e.key.length === 1) { /* Block typing */ } else { return; } } if (gameState.mode !== 'editor') return; const activeEl = document.activeElement; const isInputFocused = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable); const ctrlPressed = e.ctrlKey || e.metaKey; if (isInputFocused) { if (ctrlPressed && ['a', 'c', 'v', 'x', 'z', 'y'].includes(e.key.toLowerCase())) { return; } if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Delete', 'Backspace', 'Home', 'End', 'Tab'].includes(e.key)) { return; } if (!ctrlPressed && !e.altKey && e.key.length === 1) { return; } if (['Delete', 'Backspace'].includes(e.key) && !ctrlPressed) return; if (e.key.startsWith('Arrow')) return; if (e.key === 'Escape') { activeEl.blur(); return; } e.preventDefault(); return; } if (ctrlPressed && e.key.toLowerCase() === 'z') { e.preventDefault(); historyManager.undo(); return; } if (ctrlPressed && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); historyManager.redo(); return; } if (ctrlPressed && e.key.toLowerCase() === 'c') { e.preventDefault(); editor.handleCopy(); return; } if (ctrlPressed && e.key.toLowerCase() === 'v') { e.preventDefault(); editor.handlePaste(); return; } if ((e.key === "Delete" || e.key === "Backspace") && editorState.selectedItems.length > 0) { e.preventDefault(); editor.deleteSelectedItems(); return; } let dx = 0, dy = 0; switch (e.key) { case "ArrowUp": dy = -NUDGE_AMOUNT; break; case "ArrowDown": dy = NUDGE_AMOUNT; break; case "ArrowLeft": dx = -NUDGE_AMOUNT; break; case "ArrowRight": dx = NUDGE_AMOUNT; break; default: return; } if (dx !== 0 || dy !== 0) { e.preventDefault(); editor.handleNudge(dx, dy); } },
         handleKeyUp: (e) => { if (gameState.mode !== 'editor') return; if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) { if (editorState.isNudging) { editorState.isNudging = false; } } },
-        updateAim: (mx, my) => { if (!gameState.ball.onPlayer) return; const aimVecRaw = Vec.sub({ x: mx, y: my }, { x: gameState.ball.x, y: gameState.ball.y }); let aimPowerLength = Vec.len(aimVecRaw); aimPowerLength = Math.min(aimPowerLength, AIM_LINE_LENGTH); const power = aimPowerLength / AIM_POWER_FACTOR; const normAimVec = Vec.normalize(aimVecRaw); editorState.aim.dx = normAimVec.x * power; editorState.aim.dy = normAimVec.y * power; if (editorState.aim.dy > MIN_AIM_VY) { editorState.aim.dy = MIN_AIM_VY; } }
+        // *** MODIFIED: Uses scaled aim line length ***
+        updateAim: (mx, my) => {
+            if (!gameState.ball.onPlayer) return;
+            const aimVecRaw = Vec.sub({ x: mx, y: my }, { x: gameState.ball.x, y: gameState.ball.y });
+            let aimPowerLength = Vec.len(aimVecRaw);
+            // Cap distance based on scaled aim line length
+            aimPowerLength = Math.min(aimPowerLength, gameState.scaledAimLineLength);
+            const power = aimPowerLength / AIM_POWER_FACTOR; // Power factor might need adjustment?
+            const normAimVec = Vec.normalize(aimVecRaw);
+            editorState.aim.dx = normAimVec.x * power;
+            editorState.aim.dy = normAimVec.y * power;
+            if (editorState.aim.dy > MIN_AIM_VY) {
+                editorState.aim.dy = MIN_AIM_VY;
+            }
+        }
     };
-    // --- End full eventHandlers object ---
 
 
     // --- Game Loop ---
@@ -1581,12 +1938,12 @@
             canvas.classList.remove('hidden');
             menuDiv.classList.remove('initially-hidden');
             uiManager.showMenu();
-            utils.resizeCanvas(); // Resize now that canvas is visible
-            gameLogic.startGame(); // Start in play mode after menu dismiss
+            utils.resizeCanvas(); // Resize now that canvas is visible, applies scaling via loadLevelData
+            gameLogic.startGame(); // Start game in play mode
         });
 
-        await levelManager.loadLevelsFromStorage();
-        utils.resizeCanvas(); // Initial resize for hidden canvas
+        await levelManager.loadLevelsFromStorage(); // Loads unscaled data into levelManager.levels
+        utils.resizeCanvas(); // Initial resize sets canvas size but loadLevelData is skipped
 
         lastTimestamp = performance.now();
         requestAnimationFrame(gameLoop);
