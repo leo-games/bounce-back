@@ -75,5 +75,7 @@
   "hole": {
     "relX": 0,
     "y": 100
-  }
+  },
+  "savedCanvasWidth": 1920,
+  "savedCanvasHeight": 911
 }
