@@ -11,6 +11,38 @@
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; user-select: none; /* Prevent text selection during drag */ }
         canvas { display: block; background: #f0f8ff; /* Alice Blue */ }
+        #gameCanvas.hidden, #menu.initially-hidden { display: none; }
+
+        #startMenu {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(200, 220, 255, 0.95); /* Light blueish overlay */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 30; /* Ensure it's on top */
+            text-align: center;
+            padding: 20px;
+        }
+        #startMenu.hidden { display: none; }
+        #startMenu h1 { font-size: 3rem; font-weight: 700; color: #1e3a8a; /* Dark blue */ margin-bottom: 1rem; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
+        #startMenu button {
+            padding: 0.75rem 2rem;
+            font-size: 1.25rem;
+            font-weight: 500;
+            color: white;
+            background-color: #2563eb; /* bg-blue-600 */
+            border: none;
+            border-radius: 0.5rem; /* rounded-lg */
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        #startMenu button:hover { background-color: #1d4ed8; /* hover:bg-blue-700 */ }
+        #startMenu button:active { transform: scale(0.98); }
+
         #contextMenu { position: absolute; display: none; z-index: 10; background-color: white; border-radius: 0.375rem; /* rounded-md */ box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-lg */ border: 1px solid #e5e7eb; /* border-gray-200 */ padding: 0.25rem; /* p-1 */ min-width: 180px; }
         #contextMenu button { display: block; width: 100%; text-align: left; padding: 0.5rem 1rem; /* px-4 py-2 */ font-size: 0.875rem; /* text-sm */ color: #374151; /* text-gray-700 */ border-radius: 0.25rem; /* rounded-sm */ background: none; border: none; cursor: pointer; }
         #contextMenu button:hover { background-color: #f3f4f6; /* hover:bg-gray-100 */ }
@@ -47,11 +79,16 @@
 </head>
 <body class="bg-gray-100">
 
+<div id="startMenu">
+    <h1>Bounce Back</h1>
+    <button id="startGameButton">Play Game</button>
+</div>
+
 <button id="showMenuButton" class="absolute top-4 left-4 bg-gray-600 text-white p-2 rounded-md hover:bg-gray-700 transition duration-150 ease-in-out z-20 hidden">
     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /> </svg>
 </button>
 
-<div id="menu" class="absolute top-4 left-4 bg-white p-4 rounded-lg shadow-xl z-10 space-y-3 w-64 max-h-[calc(100vh-2rem)] overflow-y-auto">
+<div id="menu" class="absolute top-4 left-4 bg-white p-4 rounded-lg shadow-xl z-10 space-y-3 w-64 max-h-[calc(100vh-2rem)] overflow-y-auto initially-hidden">
     <div class="flex justify-center mb-2">
         <img id="gameLogo" src="logo.png" alt="Bounce Back Logo" class="w-20 h-auto rounded" onerror="this.style.display='none'; document.getElementById('logoPlaceholder').style.display='inline-block';">
     </div>
@@ -110,7 +147,7 @@
 
 <div id="marqueeBox"></div>
 
-<canvas id="gameCanvas"></canvas>
+<canvas id="gameCanvas" class="hidden"></canvas>
 
 <script>
     // --- DOM Element References ---
@@ -133,6 +170,8 @@
     const brickPropertiesDiv = document.getElementById("brickProperties");
     const propMoveRangeInput = document.getElementById("propMoveRange");
     const propMoveSpeedInput = document.getElementById("propMoveSpeed");
+    const startMenu = document.getElementById("startMenu");
+    const startGameButton = document.getElementById("startGameButton");
 
 
     // --- Game Constants ---
@@ -158,7 +197,7 @@
     const ROTATE_HANDLE_SIZE_FACTOR = 1.2;
     const MIN_BRICK_DIMENSION = 10;
     const COLLISION_PUSH_FACTOR = 1.01;
-    const PLAYER_BOTTOM_OFFSET = 60;
+    const PLAYER_DEFAULT_BOTTOM_OFFSET = 60;
     const HOLE_DEFAULT_Y = 100;
     const BALL_OUTLINE_WIDTH = 2;
     const NUDGE_AMOUNT = 1;
@@ -173,8 +212,11 @@
     const DEFAULT_LEVEL_FILES = [
         './data/levels/Level_1.json',
         './data/levels/Level_2.json',
-        './data/levels/Level_3.json'  // Assuming you have this file
+        './data/levels/Level_3.json',
+        './data/levels/Level_4.json' // Assuming you have this file
     ];
+    const FALLBACK_CANVAS_WIDTH = 800;
+    const FALLBACK_CANVAS_HEIGHT = 600;
 
 
     // --- Game State Variables ---
@@ -210,7 +252,7 @@
     // --- Level Data ---
     let levelManager = {
         levels: [],
-        storageKey: 'bounceBackLevels_v1', // *** MODIFIED: Storage key for new name ***
+        storageKey: 'bounceBackLevels_v2',
 
         loadLevelsFromStorage: async function() {
             const storedLevels = localStorage.getItem(this.storageKey);
@@ -218,7 +260,7 @@
             if (storedLevels) {
                 try {
                     const parsedLevels = JSON.parse(storedLevels);
-                    if (Array.isArray(parsedLevels) && parsedLevels.length > 0 && typeof parsedLevels[0] === 'object' && parsedLevels[0].bricks) {
+                    if (Array.isArray(parsedLevels) && parsedLevels.length > 0 && typeof parsedLevels[0] === 'object' && parsedLevels[0].bricks && parsedLevels[0].player && parsedLevels[0].hole) {
                         this.levels = parsedLevels;
                         this.levels.forEach((lvl, index) => this._validateAndDefaultLevel(lvl, index));
                         loadedFromStorage = true;
@@ -250,53 +292,1258 @@
             this.populateLevelList();
         },
         saveLevelsToStorage: function() { try { localStorage.setItem(this.storageKey, JSON.stringify(this.levels)); console.log("Saved levels to localStorage."); } catch (e) { console.error("Failed to save levels to localStorage:", e); uiManager.showMessage("Error saving levels. Storage might be full.", 3000); } },
-        _validateAndDefaultLevel: function(lvl, index) { const defaultLvl = this._createDefaultLevelData(index); if (typeof lvl !== 'object' || lvl === null) return; lvl.name = lvl.name || `Level ${index + 1}`; lvl.player = lvl.player || defaultLvl.player; if (lvl.player && !lvl.player.yOffset) lvl.player.yOffset = PLAYER_BOTTOM_OFFSET; lvl.hole = lvl.hole || defaultLvl.hole; lvl.bricks = Array.isArray(lvl.bricks) ? lvl.bricks : defaultLvl.bricks; lvl.bricks.forEach(brick => { if (typeof brick !== 'object' || brick === null) return; brick.isKillBrick = brick.isKillBrick || false; brick.movementType = brick.movementType || null; brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE; brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED; brick.angle = brick.angle || 0; brick.x = brick.x ?? 0; brick.y = brick.y ?? 0; brick.width = brick.width ?? 100; brick.height = brick.height ?? 20; }); },
-        _createDefaultLevelData: function(levelIndex = 0) { console.log("Creating fallback default level data."); const fallbackBricks = [ { x: -150, y: 300, width: 200, height: 15, angle: -Math.PI / 16, isKillBrick: false, movementType: null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED }, { x: 0, y: 180, width: 100, height: 15, angle: 0, isKillBrick: false, movementType: 'horizontal', moveRange: 80, moveSpeed: 1.5 }, { x: 150, y: 250, width: 15, height: 80, angle: 0, isKillBrick: true, movementType: 'vertical', moveRange: 40, moveSpeed: 0.8 } ]; return { name: `Fallback Level ${levelIndex + 1}`, bricks: fallbackBricks, player: { relX: 0, yOffset: PLAYER_BOTTOM_OFFSET }, hole: { relX: 0, y: HOLE_DEFAULT_Y } }; },
-        loadLevelData: function(index) { if (index < 0 || index >= this.levels.length) { console.error("Attempted to load invalid level index:", index); index = 0; if (this.levels.length === 0) { this.levels.push(this._createDefaultLevelData(0)); } } const levelData = this.levels[index]; if (typeof levelData !== 'object' || levelData === null || !Array.isArray(levelData.bricks)) { console.error("Invalid level data structure at index:", index, levelData); uiManager.showMessage(`Error: Corrupted level data for Level ${index + 1}.`, 3000); return; } const centerX = canvas.width / 2; gameState.bricks = levelData.bricks.map(brickData => { if (typeof brickData !== 'object' || brickData === null) { console.warn("Skipping invalid brick data during load:", brickData); return null; } const initialAbsX = centerX + (brickData.x || 0); const initialAbsY = brickData.y || 0; return { ...brickData, x: initialAbsX, y: initialAbsY, initialX: initialAbsX, initialY: initialAbsY, isKillBrick: brickData.isKillBrick || false, movementType: brickData.movementType || null, moveRange: brickData.moveRange ?? DEFAULT_MOVE_RANGE, moveSpeed: brickData.moveSpeed ?? DEFAULT_MOVE_SPEED, angle: brickData.angle || 0, width: brickData.width ?? 100, height: brickData.height ?? 20, }; }).filter(brick => brick !== null); const playerDefaults = this._createDefaultLevelData(0).player; const currentPlayerData = levelData.player || playerDefaults; gameState.player.x = centerX + (currentPlayerData.relX || 0); gameState.player.y = canvas.height - (currentPlayerData.yOffset || PLAYER_BOTTOM_OFFSET); const holeDefaults = this._createDefaultLevelData(0).hole; const currentHoleData = levelData.hole || holeDefaults; gameState.hole.x = centerX + (currentHoleData.relX || 0); gameState.hole.y = currentHoleData.y || HOLE_DEFAULT_Y; gameState.currentLevelIndex = index; uiManager.updateLevelDisplays(); gameLogic.resetBall(); editor.resetSelectionAndHistory(); historyManager.saveState(true); uiManager.updateBrickPropertiesUI(); },
-        saveCurrentLevel: function() { if (gameState.mode !== 'editor') return; const index = gameState.currentLevelIndex; if (index < 0 || index >= this.levels.length) { console.error("Cannot save, invalid level index selected:", index); uiManager.showMessage("Error: Invalid level selected for saving.", 2000); return; } const centerX = canvas.width / 2; const levelData = this.levels[index]; levelData.bricks = gameState.bricks.map(brick => { const savedRelX = (brick.initialX !== undefined ? brick.initialX : brick.x) - centerX; const savedAbsY = brick.initialY !== undefined ? brick.initialY : brick.y; return { x: savedRelX, y: savedAbsY, width: brick.width, height: brick.height, angle: brick.angle || 0, isKillBrick: brick.isKillBrick || false, movementType: brick.movementType || null, moveRange: brick.moveRange ?? DEFAULT_MOVE_RANGE, moveSpeed: brick.moveSpeed ?? DEFAULT_MOVE_SPEED, }; }); levelData.player = { relX: gameState.player.x - centerX, yOffset: canvas.height - gameState.player.y }; levelData.hole = { relX: gameState.hole.x - centerX, y: gameState.hole.y }; this.saveLevelsToStorage(); uiManager.showMessage(`Level ${index + 1} ('${levelData.name}') saved!`, 1500); this.populateLevelList(); },
-        populateLevelList: function() { levelListElement.innerHTML = ''; if (!Array.isArray(this.levels)) { console.error("Cannot populate level list: levels data is not an array."); this.levels = []; return; } this.levels.forEach((levelData, index) => { if (typeof levelData !== 'object' || levelData === null) { console.warn(`Skipping invalid level data at index ${index} in populateLevelList.`); return; } const li = document.createElement('li'); li.onclick = (e) => { if (e.target.closest('.level-controls')) return; this.selectLevelToEdit(index); }; if (index === gameState.currentLevelIndex) { li.classList.add('selected'); } const nameSpan = document.createElement('span'); nameSpan.className = 'level-name'; nameSpan.textContent = levelData.name || `Level ${index + 1}`; nameSpan.title = "Double-click to rename"; nameSpan.ondblclick = (e) => { e.stopPropagation(); this.renameLevel(index); }; li.appendChild(nameSpan); const controlsDiv = document.createElement('div'); controlsDiv.className = 'level-controls'; const upButton = uiManager.createLevelControlButton('&uarr;', "Move Up", () => this.moveLevelUp(index), index === 0); const downButton = uiManager.createLevelControlButton('&darr;', "Move Down", () => this.moveLevelDown(index), index === this.levels.length - 1); controlsDiv.appendChild(upButton); controlsDiv.appendChild(downButton); li.appendChild(controlsDiv); levelListElement.appendChild(li); }); uiManager.updateLevelDisplays(); },
-        selectLevelToEdit: function(index) { if (index >= 0 && index < this.levels.length) { this.loadLevelData(index); this.populateLevelList(); if (gameState.mode === 'play') { gameLogic.startGame(); } else { drawing.draw(); } } else { console.error("Invalid level index selected:", index); } },
-        renameLevel: function(index) { if (index < 0 || index >= this.levels.length) return; const currentName = this.levels[index].name || `Level ${index + 1}`; const newName = prompt(`Enter new name for "${currentName}":`, currentName); if (newName === null) return; const trimmedName = newName.trim(); if (trimmedName === '') { uiManager.showMessage("Level name cannot be empty.", 2000); return; } if (trimmedName !== currentName) { this.levels[index].name = trimmedName; this.saveLevelsToStorage(); this.populateLevelList(); uiManager.showMessage(`Level ${index + 1} renamed to "${trimmedName}"`, 1500); } },
-        addNew: function() { historyManager.saveState(); this.levels.push(this._createDefaultLevelData(this.levels.length)); this.saveLevelsToStorage(); this.selectLevelToEdit(this.levels.length - 1); uiManager.showMessage(`Added new Level ${this.levels.length}`, 1500); },
-        deleteSelected: function() { const index = gameState.currentLevelIndex; if (this.levels.length <= 1) { uiManager.showMessage("Cannot delete the last level!", 2000); return; } if (confirm(`Are you sure you want to delete Level ${index + 1} ('${this.levels[index].name}')? This cannot be undone.`)) { historyManager.saveState(); this.levels.splice(index, 1); this.saveLevelsToStorage(); const newIndex = Math.max(0, index - 1); this.selectLevelToEdit(newIndex); uiManager.showMessage(`Deleted Level ${index + 1}`, 1500); } },
-        moveLevelUp: function(index) { if (index > 0) { historyManager.saveState(); [this.levels[index], this.levels[index - 1]] = [this.levels[index - 1], this.levels[index]]; this.saveLevelsToStorage(); this.selectLevelToEdit(index - 1); } },
-        moveLevelDown: function(index) { if (index < this.levels.length - 1) { historyManager.saveState(); [this.levels[index], this.levels[index + 1]] = [this.levels[index + 1], this.levels[index]]; this.saveLevelsToStorage(); this.selectLevelToEdit(index + 1); } },
-        exportSelected: function() { const index = gameState.currentLevelIndex; if (index < 0 || index >= this.levels.length) { uiManager.showMessage("No level selected to export.", 2000); return; } try { this.saveCurrentLevel(); const levelDataToExport = utils.deepClone(this.levels[index]); const levelJson = JSON.stringify(levelDataToExport, null, 2); const levelName = utils.sanitizeFilename(levelDataToExport.name || `level_${index + 1}`); const filename = `${levelName}.json`; const blob = new Blob([levelJson], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); uiManager.showMessage(`Level '${levelDataToExport.name}' exported as ${filename}`, 2000); } catch (error) { console.error("Export failed:", error); uiManager.showMessage("Failed to export level.", 2000); } },
-        importLevels: function() { importFileInput.click(); },
-        handleFileImport: function(event) { const files = event.target.files; if (!files || files.length === 0) { return; } historyManager.saveState(); let importedCount = 0; let failedCount = 0; const promises = []; Array.from(files).forEach(file => { promises.push(new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = (e) => { try { const levelData = JSON.parse(e.target.result); this._validateAndDefaultLevel(levelData, this.levels.length); if (typeof levelData !== 'object' || !levelData.name || !levelData.bricks) { throw new Error(`Invalid level structure after validation in file ${file.name}.`); } this.levels.push(levelData); importedCount++; resolve(); } catch (error) { console.error(`Failed to parse or validate file ${file.name}:`, error); failedCount++; reject(error); } }; reader.onerror = (e) => { console.error(`Failed to read file ${file.name}:`, e); failedCount++; reject(e); }; reader.readAsText(file); })); }); Promise.allSettled(promises).then(() => { let message = ""; if (importedCount > 0) { message += `Imported ${importedCount} level(s). `; this.saveLevelsToStorage(); this.populateLevelList(); this.selectLevelToEdit(this.levels.length - 1); } if (failedCount > 0) { message += `${failedCount} import(s) failed. Check console for details.`; } if (message) { uiManager.showMessage(message, importedCount > 0 ? 2500 : 3000); } event.target.value = null; }); },
+
+        _validateAndDefaultLevel: function(lvl, index) {
+            const defaultLvl = this._createDefaultLevelData(index);
+            if (typeof lvl !== 'object' || lvl === null) return;
+            lvl.name = lvl.name || `Level ${index + 1}`;
+            lvl.savedCanvasWidth = lvl.savedCanvasWidth || defaultLvl.savedCanvasWidth;
+            lvl.savedCanvasHeight = lvl.savedCanvasHeight || defaultLvl.savedCanvasHeight;
+            lvl.player = lvl.player || defaultLvl.player;
+            if (lvl.player && (lvl.player.x === undefined || lvl.player.y === undefined)) { lvl.player = defaultLvl.player; }
+            lvl.hole = lvl.hole || defaultLvl.hole;
+            if (lvl.hole && (lvl.hole.x === undefined || lvl.hole.y === undefined)) { lvl.hole = defaultLvl.hole; }
+            lvl.bricks = Array.isArray(lvl.bricks) ? lvl.bricks : defaultLvl.bricks;
+            lvl.bricks.forEach(brick => {
+                if (typeof brick !== 'object' || brick === null) return;
+                brick.isKillBrick = brick.isKillBrick || false;
+                brick.movementType = brick.movementType || null;
+                brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE;
+                brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED;
+                brick.angle = brick.angle || 0;
+                brick.x = brick.x ?? (FALLBACK_CANVAS_WIDTH / 2 - 50);
+                brick.y = brick.y ?? (FALLBACK_CANVAS_HEIGHT / 2);
+                brick.width = brick.width ?? 100;
+                brick.height = brick.height ?? 20;
+                if (brick.movementType && (brick.initialX === undefined || brick.initialY === undefined)) {
+                    brick.initialX = brick.x;
+                    brick.initialY = brick.y;
+                }
+            });
+        },
+
+        _createDefaultLevelData: function(levelIndex = 0) {
+            console.log("Creating fallback default level data.");
+            const fallbackWidth = FALLBACK_CANVAS_WIDTH;
+            const fallbackHeight = FALLBACK_CANVAS_HEIGHT;
+            const centerX = fallbackWidth / 2;
+            const fallbackBricks = [
+                { x: centerX - 150, y: 300, width: 200, height: 15, angle: -Math.PI / 16, isKillBrick: false, movementType: null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED },
+                { x: centerX - 50, y: 180, width: 100, height: 15, angle: 0, isKillBrick: false, movementType: 'horizontal', moveRange: 80, moveSpeed: 1.5, initialX: centerX - 50, initialY: 180 },
+                { x: centerX + 150 - (15/2), y: 250, width: 15, height: 80, angle: 0, isKillBrick: true, movementType: 'vertical', moveRange: 40, moveSpeed: 0.8, initialX: centerX + 150 - (15/2), initialY: 250 }
+            ];
+            return {
+                name: `Fallback Level ${levelIndex + 1}`,
+                savedCanvasWidth: fallbackWidth,
+                savedCanvasHeight: fallbackHeight,
+                bricks: fallbackBricks,
+                player: { x: centerX - (PLAYER_WIDTH / 2), y: fallbackHeight - PLAYER_DEFAULT_BOTTOM_OFFSET },
+                hole: { x: centerX, y: HOLE_DEFAULT_Y }
+            };
+        },
+
+        loadLevelData: function(index) {
+            if (index < 0 || index >= this.levels.length) {
+                console.error("Attempted to load invalid level index:", index);
+                index = 0;
+                if (this.levels.length === 0) {
+                    this.levels.push(this._createDefaultLevelData(0));
+                }
+            }
+            const levelData = this.levels[index];
+            if (typeof levelData !== 'object' || levelData === null || !Array.isArray(levelData.bricks) || !levelData.player || !levelData.hole) {
+                console.error("Invalid level data structure at index:", index, levelData);
+                uiManager.showMessage(`Error: Corrupted level data for Level ${index + 1}.`, 3000);
+                return;
+            }
+
+            const savedWidth = levelData.savedCanvasWidth || canvas.width;
+            const savedHeight = levelData.savedCanvasHeight || canvas.height;
+            const currentWidth = canvas.width;
+            const currentHeight = canvas.height;
+
+            const scaleX = (savedWidth > 0) ? currentWidth / savedWidth : 1;
+            const scaleY = (savedHeight > 0) ? currentHeight / savedHeight : 1;
+
+            gameState.bricks = levelData.bricks.map(brickData => {
+                if (typeof brickData !== 'object' || brickData === null) {
+                    console.warn("Skipping invalid brick data during load:", brickData);
+                    return null;
+                }
+                const scaledX = (brickData.x || 0) * scaleX;
+                const scaledY = (brickData.y || 0) * scaleY;
+                const scaledWidth = (brickData.width || 100) * scaleX;
+                const scaledHeight = (brickData.height || 20) * scaleY;
+                let scaledMoveRange = brickData.moveRange ?? DEFAULT_MOVE_RANGE;
+                let scaledInitialX = brickData.initialX !== undefined ? brickData.initialX * scaleX : scaledX;
+                let scaledInitialY = brickData.initialY !== undefined ? brickData.initialY * scaleY : scaledY;
+
+                if (brickData.movementType === 'horizontal') {
+                    scaledMoveRange *= scaleX;
+                } else if (brickData.movementType === 'vertical') {
+                    scaledMoveRange *= scaleY;
+                }
+
+                return {
+                    ...brickData,
+                    x: scaledX,
+                    y: scaledY,
+                    width: Math.max(MIN_BRICK_DIMENSION, scaledWidth),
+                    height: Math.max(MIN_BRICK_DIMENSION, scaledHeight),
+                    initialX: scaledInitialX,
+                    initialY: scaledInitialY,
+                    moveRange: scaledMoveRange,
+                };
+            }).filter(brick => brick !== null);
+
+            const savedPlayer = levelData.player;
+            gameState.player.x = (savedPlayer.x || (savedWidth / 2 - PLAYER_WIDTH / 2)) * scaleX;
+            gameState.player.y = (savedPlayer.y || (savedHeight - PLAYER_DEFAULT_BOTTOM_OFFSET)) * scaleY;
+
+            const savedHole = levelData.hole;
+            gameState.hole.x = (savedHole.x || savedWidth / 2) * scaleX;
+            gameState.hole.y = (savedHole.y || HOLE_DEFAULT_Y) * scaleY;
+
+            gameState.currentLevelIndex = index;
+            uiManager.updateLevelDisplays();
+            gameLogic.resetBall();
+            editor.resetSelectionAndHistory();
+            historyManager.saveState(true);
+            uiManager.updateBrickPropertiesUI();
+        },
+
+        saveCurrentLevel: function() {
+            if (gameState.mode !== 'editor') return;
+            const index = gameState.currentLevelIndex;
+            if (index < 0 || index >= this.levels.length) {
+                console.error("Cannot save, invalid level index selected:", index);
+                uiManager.showMessage("Error: Invalid level selected for saving.", 2000);
+                return;
+            }
+
+            const levelData = this.levels[index];
+
+            levelData.savedCanvasWidth = canvas.width;
+            levelData.savedCanvasHeight = canvas.height;
+
+            levelData.bricks = gameState.bricks.map(brick => {
+                const savedX = brick.initialX !== undefined ? brick.initialX : brick.x;
+                const savedY = brick.initialY !== undefined ? brick.initialY : brick.y;
+                const originalSavedWidth = levelData.savedCanvasWidth || canvas.width;
+                const originalSavedHeight = levelData.savedCanvasHeight || canvas.height;
+                const loadScaleX = (originalSavedWidth > 0) ? canvas.width / originalSavedWidth : 1;
+                const loadScaleY = (originalSavedHeight > 0) ? canvas.height / originalSavedHeight : 1;
+
+                let savedMoveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE;
+                if (brick.movementType === 'horizontal' && loadScaleX !== 0) {
+                    savedMoveRange /= loadScaleX;
+                } else if (brick.movementType === 'vertical' && loadScaleY !== 0) {
+                    savedMoveRange /= loadScaleY;
+                }
+
+                return {
+                    x: savedX,
+                    y: savedY,
+                    width: brick.width,
+                    height: brick.height,
+                    angle: brick.angle || 0,
+                    isKillBrick: brick.isKillBrick || false,
+                    movementType: brick.movementType || null,
+                    moveRange: savedMoveRange,
+                    moveSpeed: brick.moveSpeed ?? DEFAULT_MOVE_SPEED,
+                    initialX: brick.initialX,
+                    initialY: brick.initialY,
+                };
+            });
+
+            levelData.player = { x: gameState.player.x, y: gameState.player.y };
+            levelData.hole = { x: gameState.hole.x, y: gameState.hole.y };
+
+            this.saveLevelsToStorage();
+            uiManager.showMessage(`Level ${index + 1} ('${levelData.name}') saved!`, 1500);
+            this.populateLevelList();
+        },
+        // *** MODIFIED: Added console log to dblclick handler ***
+        populateLevelList: function() {
+            levelListElement.innerHTML = '';
+            if (!Array.isArray(this.levels)) {
+                console.error("Cannot populate level list: levels data is not an array.");
+                this.levels = [];
+                return;
+            }
+            this.levels.forEach((levelData, index) => {
+                if (typeof levelData !== 'object' || levelData === null) {
+                    console.warn(`Skipping invalid level data at index ${index} in populateLevelList.`);
+                    return;
+                }
+                const li = document.createElement('li');
+                li.onclick = (e) => {
+                    if (e.target.closest('.level-controls')) return;
+                    this.selectLevelToEdit(index);
+                };
+                if (index === gameState.currentLevelIndex) {
+                    li.classList.add('selected');
+                }
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'level-name';
+                nameSpan.textContent = levelData.name || `Level ${index + 1}`;
+                nameSpan.title = "Double-click to rename";
+                nameSpan.ondblclick = (e) => {
+                    console.log(`[Rename Debug] Double-click detected on level index: ${index}`); // *** ADDED LOG ***
+                    e.stopPropagation();
+                    this.renameLevel(index);
+                };
+                li.appendChild(nameSpan);
+                const controlsDiv = document.createElement('div');
+                controlsDiv.className = 'level-controls';
+                const upButton = uiManager.createLevelControlButton('&uarr;', "Move Up", () => this.moveLevelUp(index), index === 0);
+                const downButton = uiManager.createLevelControlButton('&darr;', "Move Down", () => this.moveLevelDown(index), index === this.levels.length - 1);
+                controlsDiv.appendChild(upButton);
+                controlsDiv.appendChild(downButton);
+                li.appendChild(controlsDiv);
+                levelListElement.appendChild(li);
+            });
+            uiManager.updateLevelDisplays();
+        },
+        selectLevelToEdit: function(index) {
+            if (index >= 0 && index < this.levels.length) {
+                this.loadLevelData(index);
+                this.populateLevelList();
+                if (gameState.mode === 'play') {
+                    gameLogic.startGame();
+                } else {
+                    drawing.draw();
+                }
+            } else {
+                console.error("Invalid level index selected:", index);
+            }
+        },
+        // *** MODIFIED: Added console logs to renameLevel ***
+        renameLevel: function(index) {
+            console.log(`[Rename Debug] renameLevel called for index: ${index}`); // *** ADDED LOG ***
+            if (index < 0 || index >= this.levels.length) {
+                 console.log("[Rename Debug] Invalid index, exiting renameLevel."); // *** ADDED LOG ***
+                 return;
+            }
+            const currentName = this.levels[index].name || `Level ${index + 1}`;
+            const newName = prompt(`Enter new name for "${currentName}":`, currentName);
+            console.log(`[Rename Debug] Prompt returned: ${newName}`); // *** ADDED LOG ***
+
+            if (newName === null) {
+                 console.log("[Rename Debug] User cancelled prompt."); // *** ADDED LOG ***
+                 return; // User cancelled
+            }
+            const trimmedName = newName.trim();
+            if (trimmedName === '') {
+                console.log("[Rename Debug] Trimmed name is empty."); // *** ADDED LOG ***
+                uiManager.showMessage("Level name cannot be empty.", 2000);
+                return;
+            }
+            if (trimmedName !== currentName) {
+                console.log(`[Rename Debug] Attempting to rename to: "${trimmedName}"`); // *** ADDED LOG ***
+                this.levels[index].name = trimmedName;
+                console.log("[Rename Debug] Name updated in memory. Saving..."); // *** ADDED LOG ***
+                this.saveLevelsToStorage();
+                console.log("[Rename Debug] Saved. Repopulating list..."); // *** ADDED LOG ***
+                this.populateLevelList();
+                console.log("[Rename Debug] List repopulated."); // *** ADDED LOG ***
+                uiManager.showMessage(`Level ${index + 1} renamed to "${trimmedName}"`, 1500);
+            } else {
+                 console.log("[Rename Debug] New name is the same as the old name."); // *** ADDED LOG ***
+            }
+        },
+        addNew: function() {
+            historyManager.saveState();
+            const newLevelData = this._createDefaultLevelData(this.levels.length);
+            newLevelData.savedCanvasWidth = canvas.width;
+            newLevelData.savedCanvasHeight = canvas.height;
+            this.levels.push(newLevelData);
+            this.saveLevelsToStorage();
+            this.selectLevelToEdit(this.levels.length - 1);
+            uiManager.showMessage(`Added new Level ${this.levels.length}`, 1500);
+        },
+        deleteSelected: function() {
+            const index = gameState.currentLevelIndex;
+            if (this.levels.length <= 1) {
+                uiManager.showMessage("Cannot delete the last level!", 2000);
+                return;
+            }
+            if (confirm(`Are you sure you want to delete Level ${index + 1} ('${this.levels[index].name}')? This cannot be undone.`)) {
+                historyManager.saveState();
+                this.levels.splice(index, 1);
+                this.saveLevelsToStorage();
+                const newIndex = Math.max(0, index - 1);
+                this.selectLevelToEdit(newIndex);
+                uiManager.showMessage(`Deleted Level ${index + 1}`, 1500);
+            }
+        },
+        moveLevelUp: function(index) {
+            if (index > 0) {
+                historyManager.saveState();
+                [this.levels[index], this.levels[index - 1]] = [this.levels[index - 1], this.levels[index]];
+                this.saveLevelsToStorage();
+                this.selectLevelToEdit(index - 1);
+            }
+        },
+        moveLevelDown: function(index) {
+            if (index < this.levels.length - 1) {
+                historyManager.saveState();
+                [this.levels[index], this.levels[index + 1]] = [this.levels[index + 1], this.levels[index]];
+                this.saveLevelsToStorage();
+                this.selectLevelToEdit(index + 1);
+            }
+        },
+        exportSelected: function() {
+            const index = gameState.currentLevelIndex;
+            if (index < 0 || index >= this.levels.length) {
+                uiManager.showMessage("No level selected to export.", 2000);
+                return;
+            }
+            try {
+                if (gameState.mode === 'editor') {
+                    this.saveCurrentLevel();
+                }
+
+                const levelDataToExport = utils.deepClone(this.levels[index]);
+
+                if (!levelDataToExport || !levelDataToExport.bricks || !levelDataToExport.player || !levelDataToExport.hole || !levelDataToExport.savedCanvasWidth || !levelDataToExport.savedCanvasHeight) {
+                    throw new Error("Level data is incomplete for export.");
+                }
+
+                const levelJson = JSON.stringify(levelDataToExport, null, 2);
+                const levelName = utils.sanitizeFilename(levelDataToExport.name || `level_${index + 1}`);
+                const filename = `${levelName}.json`;
+                const blob = new Blob([levelJson], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                uiManager.showMessage(`Level '${levelDataToExport.name}' exported as ${filename}`, 2000);
+            } catch (error) {
+                console.error("Export failed:", error);
+                uiManager.showMessage(`Failed to export level: ${error.message}`, 3000);
+            }
+        },
+        importLevels: function() {
+            importFileInput.click();
+        },
+        handleFileImport: function(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0) {
+                return;
+            }
+            historyManager.saveState();
+            let importedCount = 0;
+            let failedCount = 0;
+            const promises = [];
+
+            Array.from(files).forEach(file => {
+                promises.push(new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const levelData = JSON.parse(e.target.result);
+                            if (typeof levelData !== 'object' || !levelData.name || !levelData.bricks || !levelData.player || !levelData.hole) {
+                                throw new Error(`Invalid base level structure in file ${file.name}.`);
+                            }
+                            this._validateAndDefaultLevel(levelData, this.levels.length);
+                            this.levels.push(levelData);
+                            importedCount++;
+                            resolve();
+                        } catch (error) {
+                            console.error(`Failed to parse or validate file ${file.name}:`, error);
+                            failedCount++;
+                            reject(error);
+                        }
+                    };
+                    reader.onerror = (e) => {
+                        console.error(`Failed to read file ${file.name}:`, e);
+                        failedCount++;
+                        reject(e);
+                    };
+                    reader.readAsText(file);
+                }));
+            });
+
+            Promise.allSettled(promises).then(() => {
+                let message = "";
+                if (importedCount > 0) {
+                    message += `Imported ${importedCount} level(s). `;
+                    this.saveLevelsToStorage();
+                    this.populateLevelList();
+                    this.selectLevelToEdit(this.levels.length - 1);
+                }
+                if (failedCount > 0) {
+                    message += `${failedCount} import(s) failed. Check console for details.`;
+                }
+                if (message) {
+                    uiManager.showMessage(message, importedCount > 0 ? 2500 : 3000);
+                }
+                event.target.value = null;
+            });
+        },
     };
 
-    // --- Vector Math Helper --- (No Changes)
+    // --- Vector Math Helper ---
     const Vec = { create: (x = 0, y = 0) => ({ x, y }), add: (v1, v2) => ({ x: v1.x + v2.x, y: v1.y + v2.y }), sub: (v1, v2) => ({ x: v1.x - v2.x, y: v1.y - v2.y }), scale: (v, s) => ({ x: v.x * s, y: v.y * s }), dot: (v1, v2) => v1.x * v2.x + v1.y * v2.y, lenSq: (v) => v.x * v.x + v.y * v.y, len: (v) => Math.sqrt(Vec.lenSq(v)), normalize: (v) => { const l = Vec.len(v); return l === 0 ? Vec.create() : Vec.scale(v, 1 / l); }, perp: (v) => ({ x: -v.y, y: v.x }), reflect: (v, normal) => { const d = Vec.dot(v, normal); return Vec.sub(v, Vec.scale(normal, 2 * d)); }, rotate: (v, angle) => { const cosA = Math.cos(angle); const sinA = Math.sin(angle); return { x: v.x * cosA - v.y * sinA, y: v.x * sinA + v.y * cosA }; } };
 
-    // --- Utility Functions --- (No Changes)
-    const utils = { resizeCanvas: () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; levelManager.loadLevelData(gameState.currentLevelIndex); drawing.draw(); }, getRectVertices: (rect) => { const hw = rect.width / 2; const hh = rect.height / 2; const cx = rect.x + hw; const cy = rect.y + hh; const angle = rect.angle || 0; const cosA = Math.cos(angle); const sinA = Math.sin(angle); const corners = [ { x: -hw, y: -hh }, { x: hw, y: -hh }, { x: hw, y: hh }, { x: -hw, y: hh } ]; return corners.map(corner => ({ x: cx + (corner.x * cosA - corner.y * sinA), y: cy + (corner.x * sinA + corner.y * cosA) })); }, getRectAxes: (vertices) => { const axes = []; for (let i = 0; i < vertices.length; i++) { const p1 = vertices[i]; const p2 = vertices[(i + 1) % vertices.length]; const edge = Vec.sub(p2, p1); const normal = Vec.normalize(Vec.perp(edge)); if (!axes.some(ax => Math.abs(Vec.dot(ax, normal)) > 0.999)) { axes.push(normal); } } return axes; }, projectShapeOntoAxis: (vertices, axis) => { let min = Vec.dot(vertices[0], axis); let max = min; for (let i = 1; i < vertices.length; i++) { const p = Vec.dot(vertices[i], axis); if (p < min) min = p; else if (p > max) max = p; } return { min, max }; }, projectCircleOntoAxis: (circle, axis) => { const centerProj = Vec.dot(Vec.create(circle.x, circle.y), axis); return { min: centerProj - circle.radius, max: centerProj + circle.radius }; }, checkCircleRectCollision: (circle, rect) => { const rectVertices = utils.getRectVertices(rect); const circleCenter = Vec.create(circle.x, circle.y); const rectCenter = Vec.create(rect.x + rect.width / 2, rect.y + rect.height / 2); const axes = utils.getRectAxes(rectVertices); let closestVertex = rectVertices[0]; let minDistSq = Vec.lenSq(Vec.sub(circleCenter, closestVertex)); for (let i = 1; i < rectVertices.length; i++) { const distSq = Vec.lenSq(Vec.sub(circleCenter, rectVertices[i])); if (distSq < minDistSq) { minDistSq = distSq; closestVertex = rectVertices[i]; } } const axisToClosestVertex = Vec.normalize(Vec.sub(circleCenter, closestVertex)); if (Vec.lenSq(axisToClosestVertex) > 0.0001 && !axes.some(ax => Math.abs(Vec.dot(ax, axisToClosestVertex)) > 0.999)) { axes.push(axisToClosestVertex); } let minOverlap = Infinity; let mtvAxis = null; for (const axis of axes) { const rectProj = utils.projectShapeOntoAxis(rectVertices, axis); const circleProj = utils.projectCircleOntoAxis(circle, axis); const overlap = Math.min(rectProj.max, circleProj.max) - Math.max(rectProj.min, circleProj.min); if (overlap <= 0) { return { collision: false }; } if (overlap < minOverlap) { minOverlap = overlap; mtvAxis = axis; } } const centerDirection = Vec.sub(circleCenter, rectCenter); if (Vec.dot(mtvAxis, centerDirection) < 0) { mtvAxis = Vec.scale(mtvAxis, -1); } return { collision: true, normal: mtvAxis, overlap: minOverlap }; }, isPointInRotatedRect: (px, py, rect) => { const hw = rect.width / 2; const hh = rect.height / 2; const cx = rect.x + hw; const cy = rect.y + hh; const angle = -(rect.angle || 0); const cosA = Math.cos(angle); const sinA = Math.sin(angle); const dx = px - cx; const dy = py - cy; const localX = dx * cosA - dy * sinA; const localY = dx * sinA + dy * cosA; return Math.abs(localX) <= hw && Math.abs(localY) <= hh; }, getBrickHandles: (brick) => { const hw = brick.width / 2; const hh = brick.height / 2; const cx = brick.x + hw; const cy = brick.y + hh; const angle = brick.angle || 0; const cosA = Math.cos(angle); const sinA = Math.sin(angle); const rotatePoint = (relX, relY) => ({ x: cx + (relX * cosA - relY * sinA), y: cy + (relX * sinA + relY * cosA) }); return { tl: rotatePoint(-hw, -hh), tr: rotatePoint(hw, -hh), bl: rotatePoint(-hw, hh), br: rotatePoint(hw, hh), rotate: rotatePoint(0, -hh - ROTATE_HANDLE_OFFSET), center: { x: cx, y: cy } }; }, deepClone: (obj) => { try { return JSON.parse(JSON.stringify(obj)); } catch (e) { console.error("Deep clone failed:", e, obj); return null; } }, selectionsAreEqual: (selA, selB) => { if (selA.length !== selB.length) return false; const sortFn = (a, b) => (a.type + a.index).localeCompare(b.type + b.index); const sortedA = [...selA].sort(sortFn); const sortedB = [...selB].sort(sortFn); return sortedA.every((item, i) => item.type === sortedB[i].type && item.index === sortedB[i].index); }, getRectBoundingBox: (rect) => { const vertices = utils.getRectVertices(rect); let minX = vertices[0].x, maxX = vertices[0].x, minY = vertices[0].y, maxY = vertices[0].y; for (let i = 1; i < vertices.length; i++) { minX = Math.min(minX, vertices[i].x); maxX = Math.max(maxX, vertices[i].x); minY = Math.min(minY, vertices[i].y); maxY = Math.max(maxY, vertices[i].y); } return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }; }, doRectsOverlap: (rect1, rect2) => { return rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x && rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y; }, sanitizeFilename: (name) => { if (!name) return 'level'; return name.replace(/[^a-z0-9_\-\s.]/gi, '_').replace(/[\s_]+/g, '_'); }, statesAreEqual: (stateA, stateB) => { try { return JSON.stringify(stateA) === JSON.stringify(stateB); } catch (e) { console.error("State comparison failed:", e); return false; } } };
+    // --- Utility Functions ---
+    const utils = {
+        resizeCanvas: () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            if (!canvas.classList.contains('hidden')) {
+                 levelManager.loadLevelData(gameState.currentLevelIndex);
+            } else {
+                 drawing.draw();
+            }
+        },
+        getRectVertices: (rect) => {
+            const cx = rect.x + rect.width / 2;
+            const cy = rect.y + rect.height / 2;
+            const hw = rect.width / 2;
+            const hh = rect.height / 2;
+            const angle = rect.angle || 0;
+            const cosA = Math.cos(angle);
+            const sinA = Math.sin(angle);
+            const corners = [ { x: -hw, y: -hh }, { x: hw, y: -hh }, { x: hw, y: hh }, { x: -hw, y: hh } ];
+            return corners.map(corner => ({
+                x: cx + (corner.x * cosA - corner.y * sinA),
+                y: cy + (corner.x * sinA + corner.y * cosA)
+            }));
+        },
+        getRectAxes: (vertices) => {
+            const axes = [];
+            for (let i = 0; i < vertices.length; i++) {
+                const p1 = vertices[i];
+                const p2 = vertices[(i + 1) % vertices.length];
+                const edge = Vec.sub(p2, p1);
+                const normal = Vec.normalize(Vec.perp(edge));
+                if (!axes.some(ax => Math.abs(Vec.dot(ax, normal)) > 0.999)) {
+                    axes.push(normal);
+                }
+            }
+            return axes;
+        },
+        projectShapeOntoAxis: (vertices, axis) => {
+            let min = Vec.dot(vertices[0], axis);
+            let max = min;
+            for (let i = 1; i < vertices.length; i++) {
+                const p = Vec.dot(vertices[i], axis);
+                if (p < min) min = p;
+                else if (p > max) max = p;
+            }
+            return { min, max };
+        },
+        projectCircleOntoAxis: (circle, axis) => {
+            const centerProj = Vec.dot(Vec.create(circle.x, circle.y), axis);
+            return { min: centerProj - circle.radius, max: centerProj + circle.radius };
+        },
+        checkCircleRectCollision: (circle, rect) => {
+            const rectVertices = utils.getRectVertices(rect);
+            const circleCenter = Vec.create(circle.x, circle.y);
+            const rectCenter = Vec.create(rect.x + rect.width / 2, rect.y + rect.height / 2);
 
-    // --- History / Undo-Redo Manager --- (No Changes)
-    const historyManager = { getCurrentStateSnapshot: () => { return { bricks: utils.deepClone(gameState.bricks), player: utils.deepClone(gameState.player), hole: utils.deepClone(gameState.hole), }; }, saveState: (forceSave = false) => { if (!forceSave && editorState.isNudging) return; editorState.isNudging = false; const currentState = historyManager.getCurrentStateSnapshot(); if (editorState.historyIndex >= 0 && utils.statesAreEqual(currentState, editorState.history[editorState.historyIndex])) { return; } editorState.history = editorState.history.slice(0, editorState.historyIndex + 1); editorState.history.push(currentState); editorState.historyIndex++; if (editorState.history.length > MAX_HISTORY) { editorState.history.shift(); editorState.historyIndex--; } }, loadStateFromHistory: (stateData) => { if (!stateData) return; gameState.bricks = utils.deepClone(stateData.bricks); gameState.player = utils.deepClone(stateData.player); gameState.hole = utils.deepClone(stateData.hole); if (gameState.ball.onPlayer) { gameLogic.resetBallPosition(); } }, undo: () => { if (gameState.mode !== 'editor' || editorState.historyIndex <= 0) return; editorState.historyIndex--; const stateToLoad = editorState.history[editorState.historyIndex]; historyManager.loadStateFromHistory(stateToLoad); editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, redo: () => { if (gameState.mode !== 'editor' || editorState.historyIndex >= editorState.history.length - 1) return; editorState.historyIndex++; const stateToLoad = editorState.history[editorState.historyIndex]; historyManager.loadStateFromHistory(stateToLoad); editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); } };
+            const axes = utils.getRectAxes(rectVertices);
 
-    // --- UI Manager --- (No Changes except updateBrickPropertiesUI added previously)
-    const uiManager = { messageTimeoutId: null, hideMenu: () => { menuDiv.classList.add('hidden'); showMenuButton.classList.remove('hidden'); }, showMenu: () => { menuDiv.classList.remove('hidden'); showMenuButton.classList.add('hidden'); }, showMessage: (text, duration = MESSAGE_DISPLAY_TIME) => { messageText.textContent = text; messageBox.style.display = 'block'; if (uiManager.messageTimeoutId) { clearTimeout(uiManager.messageTimeoutId); } if (duration > 0) { uiManager.messageTimeoutId = setTimeout(uiManager.hideMessage, duration); } }, hideMessage: () => { messageBox.style.display = 'none'; if (uiManager.messageTimeoutId) { clearTimeout(uiManager.messageTimeoutId); uiManager.messageTimeoutId = null; } }, updateUIForMode: () => { const isEditor = gameState.mode === 'editor'; editorControlsDiv.classList.toggle('hidden', !isEditor); saveButton.classList.toggle('hidden', !isEditor); editorButton.classList.toggle('bg-red-500', isEditor); editorButton.classList.toggle('hover:bg-red-600', isEditor); editorButton.classList.toggle('bg-green-500', !isEditor); editorButton.classList.toggle('hover:bg-green-600', !isEditor); playButton.classList.toggle('bg-red-500', !isEditor); playButton.classList.toggle('hover:bg-red-600', !isEditor); playButton.classList.toggle('bg-blue-500', isEditor); playButton.classList.toggle('hover:bg-blue-600', isEditor); uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y); uiManager.updateBrickPropertiesUI(); }, updateLevelDisplays: () => { const displayLevel = gameState.currentLevelIndex + 1; levelDisplay.textContent = displayLevel; editingLevelDisplay.textContent = displayLevel; }, showContextMenu: (x, y) => { contextMenuDiv.innerHTML = ''; const target = editorState.contextMenuTarget; if (target) { if (target.type === 'empty') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Brick', () => editor.addBrick('static'))); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Kill Brick', () => editor.addBrick('kill'))); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Vertical Mover', () => editor.addBrick('vertical'))); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Horizontal Mover', () => editor.addBrick('horizontal'))); if (editorState.clipboard.length > 0) { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Paste', editor.handlePaste)); } } else if (target.type === 'brick' && target.index !== undefined) { const index = target.index; const brick = gameState.bricks[index]; if (!brick) return; const toggleKillText = brick.isKillBrick ? 'Make Normal Brick' : 'Make Kill Brick'; contextMenuDiv.appendChild(uiManager.createContextMenuButton(toggleKillText, () => editor.toggleKillBrick(index))); contextMenuDiv.appendChild(document.createElement('hr')); if (brick.movementType !== 'vertical') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Vertical Mover', () => editor.setMovementType(index, 'vertical'))); } if (brick.movementType !== 'horizontal') { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Horizontal Mover', () => editor.setMovementType(index, 'horizontal'))); } if (brick.movementType !== null) { contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Static', () => editor.setMovementType(index, null))); } contextMenuDiv.appendChild(document.createElement('hr')); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Copy', editor.handleCopy)); contextMenuDiv.appendChild(uiManager.createContextMenuButton('Delete Brick', () => editor.deleteSingleBrick(index))); } } contextMenuDiv.style.left = `${x}px`; contextMenuDiv.style.top = `${y}px`; contextMenuDiv.style.display = 'block'; }, hideContextMenu: () => { contextMenuDiv.style.display = 'none'; editorState.contextMenuTarget = null; }, createContextMenuButton: (text, onClickAction) => { const button = document.createElement('button'); button.textContent = text; button.onclick = () => { onClickAction(); uiManager.hideContextMenu(); }; return button; }, createLevelControlButton: (html, title, onClickAction, disabled = false) => { const button = document.createElement('button'); button.innerHTML = html; button.title = title; button.disabled = disabled; button.onclick = (e) => { e.stopPropagation(); onClickAction(); }; return button; }, updateCursorStyle: (mx, my) => { if (gameState.mode !== 'editor' || uiManager.isPointerOverUI(mx, my)) { canvas.style.cursor = 'default'; return; } let cursorSet = false; if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') { const brick = gameState.bricks[editorState.selectedItems[0].index]; if (brick) { const handles = utils.getBrickHandles(brick); if (Math.hypot(mx - handles.rotate.x, my - handles.rotate.y) <= HANDLE_SIZE * 1.5) { canvas.style.cursor = 'grab'; cursorSet = true; } else { for (const type of ['tl', 'tr', 'bl', 'br']) { if (Math.hypot(mx - handles[type].x, my - handles[type].y) <= HANDLE_SIZE * 1.2) { canvas.style.cursor = (type === 'tl' || type === 'br') ? 'nwse-resize' : 'nesw-resize'; cursorSet = true; break; } } } } } if (!cursorSet && editorState.selectedItems.length > 0) { const isOverSelection = editor.isPointOverSelection(mx, my); if (isOverSelection) { canvas.style.cursor = 'move'; cursorSet = true; } } if (!cursorSet) { const isOverAnyItem = editor.getItemAtPoint(mx, my) !== null; if (isOverAnyItem) { canvas.style.cursor = 'pointer'; cursorSet = true; } } if (!cursorSet) { canvas.style.cursor = 'default'; } }, isPointerOverUI: (px, py) => { if (!menuDiv.classList.contains('hidden')) { const menuRect = menuDiv.getBoundingClientRect(); if (px >= menuRect.left && px <= menuRect.right && py >= menuRect.top && py <= menuRect.bottom) { return true; } } if (!showMenuButton.classList.contains('hidden')) { const buttonRect = showMenuButton.getBoundingClientRect(); if (px >= buttonRect.left && px <= buttonRect.right && py >= buttonRect.top && py <= buttonRect.bottom) { return true; } } return false; }, updateMarqueeBox: () => { if (editorState.isMarqueeSelecting) { const x = Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x); const y = Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y); const width = Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x); const height = Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y); marqueeBox.style.left = `${x}px`; marqueeBox.style.top = `${y}px`; marqueeBox.style.width = `${width}px`; marqueeBox.style.height = `${height}px`; marqueeBox.style.display = 'block'; } else { marqueeBox.style.display = 'none'; } }, updateBrickPropertiesUI: () => { if (editorState.isUpdatingPropertiesFromInput) return; if (gameState.mode === 'editor' && editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') { const brick = gameState.bricks[editorState.selectedItems[0].index]; if (brick) { brickPropertiesDiv.classList.remove('hidden'); const isMover = brick.movementType === 'vertical' || brick.movementType === 'horizontal'; propMoveRangeInput.disabled = !isMover; propMoveSpeedInput.disabled = !isMover; propMoveRangeInput.value = isMover ? (brick.moveRange ?? DEFAULT_MOVE_RANGE) : ''; propMoveSpeedInput.value = isMover ? (brick.moveSpeed ?? DEFAULT_MOVE_SPEED) : ''; propMoveRangeInput.placeholder = isMover ? '' : 'N/A (Static)'; propMoveSpeedInput.placeholder = isMover ? '' : 'N/A (Static)'; return; } } brickPropertiesDiv.classList.add('hidden'); } };
+            let closestVertex = rectVertices[0];
+            let minDistSq = Vec.lenSq(Vec.sub(circleCenter, closestVertex));
+            for (let i = 1; i < rectVertices.length; i++) {
+                const distSq = Vec.lenSq(Vec.sub(circleCenter, rectVertices[i]));
+                if (distSq < minDistSq) {
+                    minDistSq = distSq;
+                    closestVertex = rectVertices[i];
+                }
+            }
+            const axisToClosestVertex = Vec.normalize(Vec.sub(circleCenter, closestVertex));
+            if (Vec.lenSq(axisToClosestVertex) > 0.0001 && !axes.some(ax => Math.abs(Vec.dot(ax, axisToClosestVertex)) > 0.999)) {
+                axes.push(axisToClosestVertex);
+            }
 
-    // --- Game Logic --- (No Changes)
-    const gameLogic = { update: () => { if (gameState.mode === 'play') { const time = Date.now() * 0.001; gameState.bricks.forEach(brick => { if (brick.movementType && brick.initialX !== undefined && brick.initialY !== undefined) { const speed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED; const range = brick.moveRange ?? DEFAULT_MOVE_RANGE; const offset = range * Math.sin(time * speed); if (brick.movementType === 'vertical') { brick.y = brick.initialY + offset; } else if (brick.movementType === 'horizontal') { brick.x = brick.initialX + offset; } } }); } if (gameState.mode === 'editor') return; if (gameState.ball.fired) { gameState.ball.x += gameState.ball.vx; gameState.ball.y += gameState.ball.vy; if (gameState.ball.x - gameState.ball.radius < 0) { gameLogic.restartLevelAttempt("Hit left edge!"); return; } if (gameState.ball.x + gameState.ball.radius > canvas.width) { gameLogic.restartLevelAttempt("Hit right edge!"); return; } if (gameState.ball.y - gameState.ball.radius < 0) { gameLogic.restartLevelAttempt("Hit top edge!"); return; } if (gameState.ball.y > canvas.height + gameState.ball.radius * 2) { gameLogic.restartLevelAttempt("Fell off bottom!"); return; } for (const brick of gameState.bricks) { const collision = utils.checkCircleRectCollision(gameState.ball, brick); if (collision.collision) { if (brick.isKillBrick) { gameLogic.restartLevelAttempt("Hit a kill brick!"); return; } const pushVector = Vec.scale(collision.normal, collision.overlap * COLLISION_PUSH_FACTOR); gameState.ball.x += pushVector.x; gameState.ball.y += pushVector.y; const velocity = Vec.create(gameState.ball.vx, gameState.ball.vy); const reflectedVel = Vec.reflect(velocity, collision.normal); gameState.ball.vx = reflectedVel.x; gameState.ball.vy = reflectedVel.y; } } const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height }; const ballRect = { x: gameState.ball.x - gameState.ball.radius, y: gameState.ball.y - gameState.ball.radius, width: gameState.ball.radius * 2, height: gameState.ball.radius * 2 }; if (!gameState.ball.onPlayer && utils.doRectsOverlap(ballRect, playerRect)) { gameLogic.restartLevelAttempt("Ball hit player!"); return; } const distToHole = Math.hypot(gameState.ball.x - gameState.hole.x, gameState.ball.y - gameState.hole.y); if (distToHole < gameState.ball.radius + gameState.hole.radius) { uiManager.showMessage(`Level ${gameState.currentLevelIndex + 1} Complete!`); const nextLevelIndex = gameState.currentLevelIndex + 1; if (nextLevelIndex < levelManager.levels.length) { levelManager.selectLevelToEdit(nextLevelIndex); gameLogic.startGame(); } else { uiManager.showMessage("Congratulations! You beat all levels!", 0); gameLogic.switchToEditorMode(); } return; } } else if (gameState.ball.onPlayer) { gameLogic.resetBallPosition(); } }, resetBall: () => { gameState.ball.fired = false; gameState.ball.onPlayer = true; gameState.ball.vx = 0; gameState.ball.vy = 0; editorState.aim.active = false; editorState.aim.dx = 0; editorState.aim.dy = 0; gameLogic.resetBallPosition(); }, resetBallPosition: () => { gameState.ball.x = gameState.player.x + gameState.player.width / 2; gameState.ball.y = gameState.player.y - gameState.ball.radius - 2; }, fireBall: () => { if (!gameState.ball.onPlayer || gameState.mode === 'editor' || !editorState.aim.active) return; if (Math.abs(editorState.aim.dx) < 0.01 && Math.abs(editorState.aim.dy) < 0.01) return; gameState.ball.fired = true; gameState.ball.onPlayer = false; gameState.ball.vx = editorState.aim.dx; gameState.ball.vy = editorState.aim.dy; editorState.aim.active = false; editorState.aim.dx = 0; editorState.aim.dy = 0; }, restartLevelAttempt: (reason = "Hazard hit!") => { uiManager.showMessage(`${reason} Restarting level.`, MESSAGE_DISPLAY_TIME); gameLogic.resetBall(); drawing.draw(); }, startGame: () => { gameState.mode = 'play'; editorState.aim.active = false; uiManager.hideContextMenu(); uiManager.hideMessage(); editor.resetSelectionAndDragging(); levelManager.loadLevelData(gameState.currentLevelIndex); uiManager.updateUIForMode(); drawing.draw(); }, switchToEditorMode: () => { gameState.mode = 'editor'; editorState.aim.active = false; uiManager.hideContextMenu(); levelManager.loadLevelData(gameState.currentLevelIndex); uiManager.updateUIForMode(); drawing.draw(); } };
+            let minOverlap = Infinity;
+            let mtvAxis = null;
 
-    // --- Drawing Functions --- (No Changes except drawEditorOverlays added previously)
-    const drawing = { draw: () => { ctx.fillStyle = "#f0f8ff"; ctx.fillRect(0, 0, canvas.width, canvas.height); drawing.drawHole(); gameState.bricks.forEach((brick, index) => { drawing.drawBrick(brick, index); }); drawing.drawPlayer(); drawing.drawBall(); if (gameState.mode === 'play' && editorState.aim.active && gameState.ball.onPlayer) { drawing.drawAimLine(); } if (gameState.mode === 'editor') { drawing.drawEditorOverlays(); } }, drawHole: () => { const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'hole'); ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(gameState.hole.x, gameState.hole.y, gameState.hole.radius, 0, Math.PI * 2); ctx.fill(); if (isSelected) { ctx.strokeStyle = SELECTED_ITEM_OUTLINE_COLOR; ctx.lineWidth = 2; ctx.stroke(); } }, drawBrick: (brick, index) => { const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'brick' && item.index === index); ctx.save(); const centerX = brick.x + brick.width / 2; const centerY = brick.y + brick.height / 2; ctx.translate(centerX, centerY); ctx.rotate(brick.angle || 0); ctx.translate(-centerX, -centerY); let fillColor = BRICK_COLOR; if (brick.isKillBrick) { fillColor = KILL_BRICK_COLOR; } else if (brick.movementType === 'vertical') { fillColor = VERTICAL_MOVER_COLOR; } else if (brick.movementType === 'horizontal') { fillColor = HORIZONTAL_MOVER_COLOR; } if (isSelected) { fillColor = SELECTED_BRICK_COLOR; } ctx.fillStyle = fillColor; ctx.strokeStyle = BRICK_STROKE_COLOR; ctx.lineWidth = 1; ctx.fillRect(brick.x, brick.y, brick.width, brick.height); ctx.strokeRect(brick.x, brick.y, brick.width, brick.height); ctx.restore(); }, drawPlayer: () => { const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'player'); const player = gameState.player; ctx.fillStyle = "#4CAF50"; ctx.fillRect(player.x, player.y, player.width, player.height); const headX = player.x + player.width / 2; const headY = player.y - PLAYER_HEAD_RADIUS; ctx.fillStyle = "#8BC34A"; ctx.beginPath(); ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2); ctx.fill(); if (isSelected) { ctx.strokeStyle = SELECTED_ITEM_OUTLINE_COLOR; ctx.lineWidth = 2; ctx.strokeRect(player.x, player.y, player.width, player.height); ctx.beginPath(); ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2); ctx.stroke(); } }, drawBall: () => { ctx.save(); ctx.fillStyle = "white"; ctx.strokeStyle = "black"; ctx.lineWidth = BALL_OUTLINE_WIDTH; ctx.beginPath(); ctx.arc(gameState.ball.x, gameState.ball.y, gameState.ball.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore(); }, drawAimLine: () => { ctx.beginPath(); ctx.moveTo(gameState.ball.x, gameState.ball.y); const potentialVx = editorState.aim.dx; const potentialVy = editorState.aim.dy; const endX = gameState.ball.x + potentialVx * AIM_VISUAL_SCALE; const endY = gameState.ball.y + potentialVy * AIM_VISUAL_SCALE; ctx.lineTo(endX, endY); ctx.strokeStyle = "rgba(255, 0, 0, 0.7)"; ctx.lineWidth = 2; ctx.setLineDash([5, 3]); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(endX, endY, 3, 0, Math.PI * 2); ctx.fillStyle = "rgba(255, 0, 0, 0.7)"; ctx.fill(); }, drawEditorOverlays: () => { if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') { const brick = gameState.bricks[editorState.selectedItems[0].index]; if (brick) { if (brick.movementType === 'vertical' || brick.movementType === 'horizontal') { drawing.drawMovementRange(brick); } drawing.drawHandles(brick); } } }, drawMovementRange: (brick) => { const range = brick.moveRange ?? DEFAULT_MOVE_RANGE; const initialCenterX = (brick.initialX ?? brick.x) + brick.width / 2; const initialCenterY = (brick.initialY ?? brick.y) + brick.height / 2; ctx.save(); ctx.strokeStyle = MOVER_RANGE_INDICATOR_COLOR; ctx.lineWidth = MOVER_RANGE_INDICATOR_WIDTH; ctx.setLineDash([4, 4]); ctx.beginPath(); if (brick.movementType === 'vertical') { const y1 = initialCenterY - range; const y2 = initialCenterY + range; ctx.moveTo(initialCenterX, y1); ctx.lineTo(initialCenterX, y2); ctx.moveTo(initialCenterX - 5, y1); ctx.lineTo(initialCenterX + 5, y1); ctx.moveTo(initialCenterX - 5, y2); ctx.lineTo(initialCenterX + 5, y2); } else { const x1 = initialCenterX - range; const x2 = initialCenterX + range; ctx.moveTo(x1, initialCenterY); ctx.lineTo(x2, initialCenterY); ctx.moveTo(x1, initialCenterY - 5); ctx.lineTo(x1, initialCenterY + 5); ctx.moveTo(x2, initialCenterY - 5); ctx.lineTo(x2, initialCenterY + 5); } ctx.stroke(); ctx.restore(); }, drawHandles: (brick) => { const handles = utils.getBrickHandles(brick); ctx.fillStyle = HANDLE_COLOR; for (const type of ['tl', 'tr', 'bl', 'br']) { ctx.beginPath(); ctx.arc(handles[type].x, handles[type].y, HANDLE_SIZE, 0, Math.PI * 2); ctx.fill(); } ctx.beginPath(); ctx.arc(handles.rotate.x, handles.rotate.y, HANDLE_SIZE * ROTATE_HANDLE_SIZE_FACTOR, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.moveTo(handles.center.x, handles.center.y); ctx.lineTo(handles.rotate.x, handles.rotate.y); ctx.strokeStyle = HANDLE_COLOR; ctx.lineWidth = 1; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]); } };
+            for (const axis of axes) {
+                const rectProj = utils.projectShapeOntoAxis(rectVertices, axis);
+                const circleProj = utils.projectCircleOntoAxis(circle, axis);
 
-    // --- Editor Logic --- (No Changes except handlePropertyChange added previously)
-    const editor = { resetSelectionAndHistory: () => { editorState.selectedItems = []; editor.resetSelectionAndDragging(); editorState.history = []; editorState.historyIndex = -1; uiManager.updateBrickPropertiesUI(); }, resetSelectionAndDragging: () => { editorState.draggingHandle = null; editorState.isDraggingSelection = false; editorState.isMarqueeSelecting = false; editorState.originalItemStates = []; uiManager.updateMarqueeBox(); uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y); }, addBrick: (type = 'static') => { if (gameState.mode !== 'editor' || !editorState.contextMenuTarget || editorState.contextMenuTarget.type !== 'empty') return; historyManager.saveState(); const x = editorState.contextMenuTarget.x || editorState.mouse.x; const y = editorState.contextMenuTarget.y || editorState.mouse.y; const width = 100; const height = 20; const initialX = x - width / 2; const initialY = y - height / 2; const newBrick = { x: initialX, y: initialY, width: width, height: height, angle: 0, isKillBrick: type === 'kill', movementType: (type === 'vertical' || type === 'horizontal') ? type : null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED, initialX: initialX, initialY: initialY }; gameState.bricks.push(newBrick); editorState.selectedItems = [{ type: 'brick', index: gameState.bricks.length - 1 }]; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, toggleKillBrick: (index) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); const brick = gameState.bricks[index]; brick.isKillBrick = !brick.isKillBrick; editor.ensureItemSelected({ type: 'brick', index: index }); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, setMovementType: (index, type) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); const brick = gameState.bricks[index]; if (type === null) { brick.movementType = null; if (brick.initialX !== undefined) brick.x = brick.initialX; if (brick.initialY !== undefined) brick.y = brick.initialY; } else { if (brick.movementType !== type || brick.initialX === undefined || brick.initialY === undefined) { brick.initialX = brick.x; brick.initialY = brick.y; } brick.movementType = type; brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE; brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED; } editor.ensureItemSelected({ type: 'brick', index: index }); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, deleteSingleBrick: (index) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); gameState.bricks.splice(index, 1); editorState.selectedItems = editorState.selectedItems .filter(item => !(item.type === 'brick' && item.index === index)) .map(item => { if (item.type === 'brick' && item.index > index) { item.index--; } return item; }); editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, deleteSelectedItems: () => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return; historyManager.saveState(); const brickIndicesToDelete = editorState.selectedItems .filter(item => item.type === 'brick') .map(item => item.index) .sort((a, b) => b - a); const deletedPlayer = editorState.selectedItems.some(item => item.type === 'player'); const deletedHole = editorState.selectedItems.some(item => item.type === 'hole'); brickIndicesToDelete.forEach(index => { if (index >= 0 && index < gameState.bricks.length) { gameState.bricks.splice(index, 1); } else { console.warn("Attempted to delete invalid brick index:", index); } }); if (deletedPlayer || deletedHole) { uiManager.showMessage("Player and Hole cannot be deleted.", 1500); } editorState.selectedItems = []; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, handleCopy: () => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return; editorState.clipboard = []; editorState.selectedItems.forEach(item => { if (item.type === 'brick') { editorState.clipboard.push(utils.deepClone(gameState.bricks[item.index])); } }); uiManager.showMessage(`Copied ${editorState.clipboard.length} brick(s).`, 1000); }, handlePaste: () => { if (gameState.mode !== 'editor' || editorState.clipboard.length === 0) return; historyManager.saveState(); const newSelection = []; editorState.clipboard.forEach(itemData => { if (itemData) { const newItem = utils.deepClone(itemData); newItem.x += PASTE_OFFSET; newItem.y += PASTE_OFFSET; newItem.initialX = (newItem.initialX !== undefined ? newItem.initialX : newItem.x - PASTE_OFFSET) + PASTE_OFFSET; newItem.initialY = (newItem.initialY !== undefined ? newItem.initialY : newItem.y - PASTE_OFFSET) + PASTE_OFFSET; gameState.bricks.push(newItem); newSelection.push({ type: 'brick', index: gameState.bricks.length - 1 }); } }); editorState.selectedItems = newSelection; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); }, handleNudge: (dx, dy) => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0 || (dx === 0 && dy === 0)) return; if (!editorState.isNudging) { historyManager.saveState(); editorState.isNudging = true; } editorState.selectedItems.forEach(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; brick.x += dx; brick.y += dy; brick.initialX += dx; brick.initialY += dy; } else if (item.type === 'player') { gameState.player.x += dx; gameState.player.y += dy; if (gameState.ball.onPlayer) gameLogic.resetBallPosition(); } else if (item.type === 'hole') { gameState.hole.x += dx; gameState.hole.y += dy; } }); drawing.draw(); }, selectItem: (itemToSelect, ctrlPressed) => { if (!itemToSelect) return; const alreadySelected = editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index); if (ctrlPressed) { if (alreadySelected) { editorState.selectedItems = editorState.selectedItems.filter(sel => !(sel.type === itemToSelect.type && sel.index === itemToSelect.index)); } else { editorState.selectedItems.push(itemToSelect); } } else { if (!alreadySelected) { editorState.selectedItems = [itemToSelect]; } } uiManager.updateBrickPropertiesUI(); }, ensureItemSelected: (itemToSelect) => { if (!editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index)) { editorState.selectedItems.push(itemToSelect); uiManager.updateBrickPropertiesUI(); } }, getItemAtPoint: (px, py) => { for (let i = gameState.bricks.length - 1; i >= 0; i--) { if (utils.isPointInRotatedRect(px, py, gameState.bricks[i])) { return { type: 'brick', index: i }; } } const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height }; const headCenter = { x: gameState.player.x + gameState.player.width / 2, y: gameState.player.y - PLAYER_HEAD_RADIUS }; if ((Math.hypot(px - headCenter.x, py - headCenter.y) <= PLAYER_HEAD_RADIUS) || (px >= playerRect.x && px <= playerRect.x + playerRect.width && py >= playerRect.y && py <= playerRect.y + playerRect.height)) { return { type: 'player', index: null }; } if (Math.hypot(px - gameState.hole.x, py - gameState.hole.y) <= gameState.hole.radius) { return { type: 'hole', index: null }; } return null; }, isPointOverSelection: (px, py) => { return editorState.selectedItems.some(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick && utils.isPointInRotatedRect(px, py, brick); } else if (item.type === 'player') { const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height }; const headCenter = { x: gameState.player.x + gameState.player.width / 2, y: gameState.player.y - PLAYER_HEAD_RADIUS }; return (Math.hypot(px - headCenter.x, py - headCenter.y) <= PLAYER_HEAD_RADIUS) || (px >= playerRect.x && px <= playerRect.x + playerRect.width && py >= playerRect.y && py <= playerRect.y + playerRect.height); } else if (item.type === 'hole') { return Math.hypot(px - gameState.hole.x, py - gameState.hole.y) <= gameState.hole.radius; } return false; }); }, getHandleAtPoint: (px, py) => { if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return null; } const brick = gameState.bricks[editorState.selectedItems[0].index]; if (!brick) return null; const handles = utils.getBrickHandles(brick); if (Math.hypot(px - handles.rotate.x, py - handles.rotate.y) <= HANDLE_SIZE * 1.5) { return { type: 'rotate', itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; } for (const type of ['tl', 'tr', 'bl', 'br']) { if (Math.hypot(px - handles[type].x, py - handles[type].y) <= HANDLE_SIZE * 1.2) { return { type: type, itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; } } return null; }, finalizeMarqueeSelection: (ctrlPressed) => { const marqueeRect = { x: Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x), y: Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y), width: Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x), height: Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y) }; if (marqueeRect.width < 5 && marqueeRect.height < 5) { if (!ctrlPressed) { editorState.selectedItems = []; } uiManager.updateBrickPropertiesUI(); return; } const newlySelected = []; gameState.bricks.forEach((brick, index) => { const brickBounds = utils.getRectBoundingBox(brick); if (utils.doRectsOverlap(marqueeRect, brickBounds)) { newlySelected.push({ type: 'brick', index: index }); } }); const playerBounds = { x: gameState.player.x, y: gameState.player.y - PLAYER_HEAD_RADIUS * 2, width: gameState.player.width, height: gameState.player.height + PLAYER_HEAD_RADIUS * 2 }; if (utils.doRectsOverlap(marqueeRect, playerBounds)) { newlySelected.push({ type: 'player', index: null }); } const holeBounds = { x: gameState.hole.x - gameState.hole.radius, y: gameState.hole.y - gameState.hole.radius, width: gameState.hole.radius * 2, height: gameState.hole.radius * 2 }; if (utils.doRectsOverlap(marqueeRect, holeBounds)) { newlySelected.push({ type: 'hole', index: null }); } if (ctrlPressed) { newlySelected.forEach(newItem => { if (!editorState.selectedItems.some(sel => sel.type === newItem.type && sel.index === newItem.index)) { editorState.selectedItems.push(newItem); } }); } else { editorState.selectedItems = newlySelected; } uiManager.updateBrickPropertiesUI(); }, updateItemsDuringDrag: (dx, dy) => { editorState.selectedItems.forEach((item, i) => { const origState = editorState.originalItemStates[i]; if (!origState) return; if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (!brick) return; brick.x = origState.x + dx; brick.y = origState.y + dy; } else if (item.type === 'player') { gameState.player.x = origState.x + dx; gameState.player.y = origState.y + dy; if (gameState.ball.onPlayer) gameLogic.resetBallPosition(); } else if (item.type === 'hole') { gameState.hole.x = origState.x + dx; gameState.hole.y = origState.y + dy; } }); }, updateBrickDuringResize: (handleType, currentMouseX, currentMouseY) => { if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return; const brickIndex = editorState.draggingHandle.itemRef.index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const origState = editorState.draggingHandle.startBrickState; const origAngle = origState.angle || 0; const cosA = Math.cos(-origAngle); const sinA = Math.sin(-origAngle); const ocx = origState.x + origState.width / 2; const ocy = origState.y + origState.height / 2; const dxWorld = currentMouseX - ocx; const dyWorld = currentMouseY - ocy; const localMx = dxWorld * cosA - dyWorld * sinA; const localMy = dxWorld * sinA + dyWorld * cosA; let newHalfWidth, newHalfHeight; switch (handleType) { case 'br': newHalfWidth = localMx; newHalfHeight = localMy; break; case 'bl': newHalfWidth = -localMx; newHalfHeight = localMy; break; case 'tr': newHalfWidth = localMx; newHalfHeight = -localMy; break; case 'tl': newHalfWidth = -localMx; newHalfHeight = -localMy; break; default: return; } newHalfWidth = Math.max(MIN_BRICK_DIMENSION / 2, newHalfWidth); newHalfHeight = Math.max(MIN_BRICK_DIMENSION / 2, newHalfHeight); const newWidth = 2 * newHalfWidth; const newHeight = 2 * newHalfHeight; const centerShiftXLocal = (newWidth - origState.width) / 2; const centerShiftYLocal = (newHeight - origState.height) / 2; let shiftFactorX = 0, shiftFactorY = 0; switch(handleType) { case 'tl': shiftFactorX = -1; shiftFactorY = -1; break; case 'tr': shiftFactorX = 1; shiftFactorY = -1; break; case 'bl': shiftFactorX = -1; shiftFactorY = 1; break; case 'br': shiftFactorX = 1; shiftFactorY = 1; break; } const finalShiftLocalX = centerShiftXLocal * shiftFactorX; const finalShiftLocalY = centerShiftYLocal * shiftFactorY; const cosARot = Math.cos(origAngle); const sinARot = Math.sin(origAngle); const centerShiftWorldX = finalShiftLocalX * cosARot - finalShiftLocalY * sinARot; const centerShiftWorldY = finalShiftLocalX * sinARot + finalShiftLocalY * cosARot; const newCx = ocx + centerShiftWorldX; const newCy = ocy + centerShiftWorldY; brick.width = newWidth; brick.height = newHeight; brick.angle = origAngle; const localTLX = -newWidth / 2; const localTLY = -newHeight / 2; brick.x = newCx + (localTLX * cosARot - localTLY * sinARot); brick.y = newCy + (localTLX * sinARot + localTLY * cosARot); }, updateBrickDuringRotate: (currentMouseX, currentMouseY) => { if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return; const brickIndex = editorState.draggingHandle.itemRef.index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const origState = editorState.draggingHandle.startBrickState; const center = utils.getBrickHandles(origState).center; const currentAngle = Math.atan2(currentMouseY - center.y, currentMouseX - center.x); const startAngle = Math.atan2(editorState.dragStart.y - center.y, editorState.dragStart.x - center.x); brick.angle = origState.angle + (currentAngle - startAngle); }, finalizeItemManipulation: () => { if (editorState.draggingHandle || editorState.isDraggingSelection) { editorState.selectedItems.forEach(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (!brick) return; brick.initialX = brick.x; brick.initialY = brick.y; } }); const previousState = editorState.history[editorState.historyIndex]; const currentState = historyManager.getCurrentStateSnapshot(); if (previousState && utils.statesAreEqual(previousState, currentState)) { editorState.history.pop(); editorState.historyIndex--; } else { if (editorState.historyIndex >= 0 && editorState.history.length > editorState.historyIndex) { editorState.history[editorState.historyIndex] = currentState; } else { console.warn("History index issue during finalization."); historyManager.saveState(true); } } } }, handlePropertyChange: (event) => { if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return; } const brickIndex = editorState.selectedItems[0].index; if (brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const propertyName = event.target.name; const value = parseFloat(event.target.value); if (isNaN(value) || value < 0) { console.warn(`Invalid value entered for ${propertyName}:`, event.target.value); event.target.value = brick[propertyName] ?? (propertyName === 'moveRange' ? DEFAULT_MOVE_RANGE : DEFAULT_MOVE_SPEED); return; } if (brick[propertyName] === value) { return; } historyManager.saveState(); brick[propertyName] = value; editorState.isUpdatingPropertiesFromInput = true; drawing.draw(); editorState.isUpdatingPropertiesFromInput = false; } };
+                const overlap = Math.min(rectProj.max, circleProj.max) - Math.max(rectProj.min, circleProj.min);
 
-    // --- Event Handlers --- (No Changes)
-    const eventHandlers = { handleResize: () => { utils.resizeCanvas(); }, handleContextMenu: (e) => { e.preventDefault(); uiManager.hideContextMenu(); if (gameState.mode !== 'editor' || uiManager.isPointerOverUI(e.clientX, e.clientY)) { return; } const mx = e.clientX; const my = e.clientY; let targetItem = editor.getItemAtPoint(mx, my); let targetType = 'empty'; let targetIndex = null; if (targetItem) { targetType = targetItem.type; targetIndex = targetItem.index; if (!editorState.selectedItems.some(sel => sel.type === targetType && sel.index === targetIndex)) { editorState.selectedItems = [targetItem]; uiManager.updateBrickPropertiesUI(); drawing.draw(); } } editorState.contextMenuTarget = { type: targetType, index: targetIndex, x: mx, y: my }; uiManager.showContextMenu(mx, my); }, handleMouseDown: (e) => { if (e.button !== 0 || uiManager.isPointerOverUI(e.clientX, e.clientY)) { return; } editorState.mouse.down = true; editorState.mouse.x = e.clientX; editorState.mouse.y = e.clientY; editorState.mouse.dragStartX = editorState.mouse.x; editorState.mouse.dragStartY = editorState.mouse.y; uiManager.hideContextMenu(); editor.resetSelectionAndDragging(); if (gameState.mode === 'editor') { const mx = editorState.mouse.x; const my = editorState.mouse.y; const ctrlPressed = e.ctrlKey || e.metaKey; const clickedHandle = editor.getHandleAtPoint(mx, my); if (clickedHandle) { editorState.draggingHandle = clickedHandle; editorState.dragStart = { x: mx, y: my }; historyManager.saveState(); canvas.style.cursor = clickedHandle.type === 'rotate' ? 'grabbing' : (clickedHandle.type === 'tl' || clickedHandle.type === 'br') ? 'nwse-resize' : 'nesw-resize'; } else { const clickedItem = editor.getItemAtPoint(mx, my); if (clickedItem) { const isClickOnSelection = editor.isPointOverSelection(mx, my); editor.selectItem(clickedItem, ctrlPressed); if (editor.isPointOverSelection(mx, my)) { editorState.isDraggingSelection = true; editorState.dragStart = { x: mx, y: my }; editorState.originalItemStates = editorState.selectedItems.map(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick ? utils.deepClone(brick) : null; } if (item.type === 'player') return utils.deepClone(gameState.player); if (item.type === 'hole') return utils.deepClone(gameState.hole); return null; }).filter(s => s !== null); historyManager.saveState(); canvas.style.cursor = 'move'; } } else { if (!ctrlPressed) { editorState.selectedItems = []; uiManager.updateBrickPropertiesUI(); } editorState.isMarqueeSelecting = true; editorState.marqueeStart = { x: mx, y: my }; editorState.marqueeEnd = { x: mx, y: my }; uiManager.updateMarqueeBox(); canvas.style.cursor = 'crosshair'; } } drawing.draw(); } else { if (gameState.ball.onPlayer) { editorState.aim.active = true; eventHandlers.updateAim(editorState.mouse.x, editorState.mouse.y); drawing.draw(); } } }, handleMouseMove: (e) => { editorState.mouse.x = e.clientX; editorState.mouse.y = e.clientY; const mx = editorState.mouse.x; const my = editorState.mouse.y; if (gameState.mode === 'editor') { if (editorState.mouse.down) { const dx = mx - editorState.dragStart.x; const dy = my - editorState.dragStart.y; if (editorState.draggingHandle) { editorState.isDraggingSelection = false; editorState.isMarqueeSelecting = false; const handleType = editorState.draggingHandle.type; if (handleType === 'rotate') { editor.updateBrickDuringRotate(mx, my); canvas.style.cursor = 'grabbing'; } else { editor.updateBrickDuringResize(handleType, mx, my); } drawing.draw(); } else if (editorState.isDraggingSelection) { editorState.isMarqueeSelecting = false; canvas.style.cursor = 'move'; editor.updateItemsDuringDrag(dx, dy); drawing.draw(); } else if (editorState.isMarqueeSelecting) { canvas.style.cursor = 'crosshair'; editorState.marqueeEnd = { x: mx, y: my }; uiManager.updateMarqueeBox(); } } else { uiManager.updateCursorStyle(mx, my); } } else { if (editorState.aim.active && gameState.ball.onPlayer) { eventHandlers.updateAim(mx, my); drawing.draw(); } } }, handleMouseUp: (e) => { if (e.button !== 0 || !editorState.mouse.down) return; editorState.mouse.down = false; if (gameState.mode === 'editor') { editor.finalizeItemManipulation(); if (editorState.isMarqueeSelecting) { editor.finalizeMarqueeSelection(e.ctrlKey || e.metaKey); } const dx = editorState.mouse.x - editorState.mouse.dragStartX; const dy = editorState.mouse.y - editorState.mouse.dragStartY; if (!editorState.draggingHandle && !editorState.isDraggingSelection && !editorState.isMarqueeSelecting) { if (Vec.lenSq({x: dx, y: dy}) < CLICK_THRESHOLD_SQ) { /* Simple click */ } } editor.resetSelectionAndDragging(); drawing.draw(); } else { if (editorState.aim.active && gameState.ball.onPlayer) { gameLogic.fireBall(); editorState.aim.active = false; drawing.draw(); } } uiManager.updateCursorStyle(e.clientX, e.clientY); }, handleKeyDown: (e) => { if (gameState.mode !== 'editor') return; const activeEl = document.activeElement; const isInputFocused = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA'); const ctrlPressed = e.ctrlKey || e.metaKey; if (isInputFocused) { if (activeEl.type === 'number' && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)) { return; } if (!(ctrlPressed && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'a' || e.key.toLowerCase() === 'x'))) { /* Block other shortcuts? Maybe only block delete/backspace/arrows? */ if (["Delete", "Backspace", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) { /* Allow text deletion/navigation within input */ } else if (ctrlPressed && e.key.toLowerCase() === 'z') { /* Allow undo/redo in inputs? Maybe not */ return; } else if (ctrlPressed && e.key.toLowerCase() === 'y') { return; } else if (!ctrlPressed && e.key.length === 1) { /* Allow typing */ } else { /* Block other potential editor shortcuts */ return; } } } if (ctrlPressed && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) { historyManager.redo(); } else { historyManager.undo(); } return; } if (ctrlPressed && e.key.toLowerCase() === 'y') { e.preventDefault(); historyManager.redo(); return; } if (ctrlPressed && e.key.toLowerCase() === 'c') { e.preventDefault(); editor.handleCopy(); return; } if (ctrlPressed && e.key.toLowerCase() === 'v') { e.preventDefault(); editor.handlePaste(); return; } if ((e.key === "Delete" || e.key === "Backspace") && editorState.selectedItems.length > 0 && !isInputFocused) { e.preventDefault(); editor.deleteSelectedItems(); return; } let dx = 0, dy = 0; switch (e.key) { case "ArrowUp": dy = -NUDGE_AMOUNT; break; case "ArrowDown": dy = NUDGE_AMOUNT; break; case "ArrowLeft": dx = -NUDGE_AMOUNT; break; case "ArrowRight": dx = NUDGE_AMOUNT; break; default: return; } if ((dx !== 0 || dy !== 0) && !isInputFocused) { e.preventDefault(); editor.handleNudge(dx, dy); } }, handleKeyUp: (e) => { if (gameState.mode !== 'editor') return; if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) { if (editorState.isNudging) { editorState.isNudging = false; } } }, updateAim: (mx, my) => { if (!gameState.ball.onPlayer) return; const aimVecRaw = Vec.sub({ x: mx, y: my }, { x: gameState.ball.x, y: gameState.ball.y }); let aimPowerLength = Vec.len(aimVecRaw); aimPowerLength = Math.min(aimPowerLength, AIM_LINE_LENGTH); const power = aimPowerLength / AIM_POWER_FACTOR; const normAimVec = Vec.normalize(aimVecRaw); editorState.aim.dx = normAimVec.x * power; editorState.aim.dy = normAimVec.y * power; if (editorState.aim.dy > MIN_AIM_VY) { editorState.aim.dy = MIN_AIM_VY; } } };
+                if (overlap <= 0) {
+                    return { collision: false };
+                }
+
+                if (overlap < minOverlap) {
+                    minOverlap = overlap;
+                    mtvAxis = axis;
+                }
+            }
+
+            const centerDirection = Vec.sub(circleCenter, rectCenter);
+            if (Vec.dot(mtvAxis, centerDirection) < 0) {
+                mtvAxis = Vec.scale(mtvAxis, -1);
+            }
+
+            return { collision: true, normal: mtvAxis, overlap: minOverlap };
+        },
+        isPointInRotatedRect: (px, py, rect) => {
+            const hw = rect.width / 2;
+            const hh = rect.height / 2;
+            const cx = rect.x + hw;
+            const cy = rect.y + hh;
+            const angle = -(rect.angle || 0);
+            const cosA = Math.cos(angle);
+            const sinA = Math.sin(angle);
+
+            const dx = px - cx;
+            const dy = py - cy;
+
+            const localX = dx * cosA - dy * sinA;
+            const localY = dx * sinA + dy * cosA;
+
+            return Math.abs(localX) <= hw && Math.abs(localY) <= hh;
+        },
+        getBrickHandles: (brick) => {
+            const hw = brick.width / 2;
+            const hh = brick.height / 2;
+            const cx = brick.x + hw;
+            const cy = brick.y + hh;
+            const angle = brick.angle || 0;
+            const cosA = Math.cos(angle);
+            const sinA = Math.sin(angle);
+
+            const rotatePoint = (relX, relY) => ({
+                x: cx + (relX * cosA - relY * sinA),
+                y: cy + (relX * sinA + relY * cosA)
+            });
+
+            return {
+                tl: rotatePoint(-hw, -hh),
+                tr: rotatePoint(hw, -hh),
+                bl: rotatePoint(-hw, hh),
+                br: rotatePoint(hw, hh),
+                rotate: rotatePoint(0, -hh - ROTATE_HANDLE_OFFSET),
+                center: { x: cx, y: cy }
+            };
+        },
+        deepClone: (obj) => {
+            try {
+                return JSON.parse(JSON.stringify(obj));
+            } catch (e) {
+                console.error("Deep clone failed:", e, obj);
+                return null;
+            }
+        },
+        selectionsAreEqual: (selA, selB) => {
+            if (selA.length !== selB.length) return false;
+            const sortFn = (a, b) => (a.type + a.index).localeCompare(b.type + b.index);
+            const sortedA = [...selA].sort(sortFn);
+            const sortedB = [...selB].sort(sortFn);
+            return sortedA.every((item, i) => item.type === sortedB[i].type && item.index === sortedB[i].index);
+        },
+        getRectBoundingBox: (rect) => {
+            const vertices = utils.getRectVertices(rect);
+            let minX = vertices[0].x, maxX = vertices[0].x, minY = vertices[0].y, maxY = vertices[0].y;
+            for (let i = 1; i < vertices.length; i++) {
+                minX = Math.min(minX, vertices[i].x);
+                maxX = Math.max(maxX, vertices[i].x);
+                minY = Math.min(minY, vertices[i].y);
+                maxY = Math.max(maxY, vertices[i].y);
+            }
+            return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        },
+        doRectsOverlap: (rect1, rect2) => {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        },
+        sanitizeFilename: (name) => {
+            if (!name) return 'level';
+            return name.replace(/[^a-z0-9_\-\s.]/gi, '_').replace(/[\s_]+/g, '_');
+        },
+        statesAreEqual: (stateA, stateB) => {
+            try {
+                return JSON.stringify(stateA) === JSON.stringify(stateB);
+            } catch (e) {
+                console.error("State comparison failed:", e);
+                return false;
+            }
+        }
+    };
+
+    // --- History / Undo-Redo Manager ---
+    const historyManager = {
+        getCurrentStateSnapshot: () => {
+            return {
+                bricks: utils.deepClone(gameState.bricks),
+                player: utils.deepClone(gameState.player),
+                hole: utils.deepClone(gameState.hole),
+            };
+        },
+        saveState: (forceSave = false) => {
+            if (gameState.mode !== 'editor') return;
+            if (!forceSave && editorState.isNudging) return;
+
+            editorState.isNudging = false;
+            const currentState = historyManager.getCurrentStateSnapshot();
+
+            if (editorState.historyIndex >= 0 && utils.statesAreEqual(currentState, editorState.history[editorState.historyIndex])) {
+                return;
+            }
+
+            editorState.history = editorState.history.slice(0, editorState.historyIndex + 1);
+
+            editorState.history.push(currentState);
+            editorState.historyIndex++;
+
+            if (editorState.history.length > MAX_HISTORY) {
+                editorState.history.shift();
+                editorState.historyIndex--;
+            }
+        },
+        loadStateFromHistory: (stateData) => {
+            if (!stateData) return;
+            gameState.bricks = utils.deepClone(stateData.bricks);
+            gameState.player = utils.deepClone(stateData.player);
+            gameState.hole = utils.deepClone(stateData.hole);
+
+            if (gameState.ball.onPlayer) {
+                gameLogic.resetBallPosition();
+            }
+            gameLogic.resetBall();
+
+            editor.resetSelectionAndDragging();
+            uiManager.updateBrickPropertiesUI();
+        },
+        undo: () => {
+            if (gameState.mode !== 'editor' || editorState.historyIndex <= 0) return;
+
+            editorState.historyIndex--;
+            const stateToLoad = editorState.history[editorState.historyIndex];
+            historyManager.loadStateFromHistory(stateToLoad);
+            drawing.draw();
+        },
+        redo: () => {
+            if (gameState.mode !== 'editor' || editorState.historyIndex >= editorState.history.length - 1) return;
+
+            editorState.historyIndex++;
+            const stateToLoad = editorState.history[editorState.historyIndex];
+            historyManager.loadStateFromHistory(stateToLoad);
+            drawing.draw();
+        }
+    };
+
+    // --- UI Manager ---
+    const uiManager = {
+        messageTimeoutId: null,
+        hideMenu: () => {
+             menuDiv.classList.add('hidden');
+             menuDiv.classList.remove('initially-hidden'); // Ensure it can be shown later
+             showMenuButton.classList.remove('hidden');
+        },
+        showMenu: () => {
+             menuDiv.classList.remove('hidden', 'initially-hidden');
+             showMenuButton.classList.add('hidden');
+        },
+        showMessage: (text, duration = MESSAGE_DISPLAY_TIME) => {
+            messageText.textContent = text;
+            messageBox.style.display = 'block';
+            if (uiManager.messageTimeoutId) { clearTimeout(uiManager.messageTimeoutId); }
+            if (duration > 0) {
+                uiManager.messageTimeoutId = setTimeout(uiManager.hideMessage, duration);
+            }
+        },
+        hideMessage: () => {
+            messageBox.style.display = 'none';
+            if (uiManager.messageTimeoutId) {
+                clearTimeout(uiManager.messageTimeoutId);
+                uiManager.messageTimeoutId = null;
+            }
+        },
+        updateUIForMode: () => {
+            const isEditor = gameState.mode === 'editor';
+            editorControlsDiv.classList.toggle('hidden', !isEditor);
+            saveButton.classList.toggle('hidden', !isEditor);
+            editorButton.classList.toggle('bg-red-500', isEditor);
+            editorButton.classList.toggle('hover:bg-red-600', isEditor);
+            editorButton.classList.toggle('bg-green-500', !isEditor);
+            editorButton.classList.toggle('hover:bg-green-600', !isEditor);
+            playButton.classList.toggle('bg-red-500', !isEditor);
+            playButton.classList.toggle('hover:bg-red-600', !isEditor);
+            playButton.classList.toggle('bg-blue-500', isEditor);
+            playButton.classList.toggle('hover:bg-blue-600', isEditor);
+
+            uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y);
+            uiManager.updateBrickPropertiesUI();
+            if (!isEditor) {
+                 uiManager.hideContextMenu();
+                 editor.resetSelectionAndDragging();
+            }
+        },
+        updateLevelDisplays: () => {
+            const displayLevel = gameState.currentLevelIndex + 1;
+            levelDisplay.textContent = displayLevel;
+            editingLevelDisplay.textContent = displayLevel;
+        },
+        showContextMenu: (x, y) => {
+            contextMenuDiv.innerHTML = '';
+            const target = editorState.contextMenuTarget;
+
+            if (target) {
+                if (target.type === 'empty') {
+                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Brick', () => editor.addBrick('static')));
+                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Kill Brick', () => editor.addBrick('kill')));
+                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Vertical Mover', () => editor.addBrick('vertical')));
+                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Add Horizontal Mover', () => editor.addBrick('horizontal')));
+                } else if (target.type === 'brick' && target.index !== undefined) {
+                    const index = target.index;
+                    const brick = gameState.bricks[index];
+                    if (!brick) return;
+
+                    const toggleKillText = brick.isKillBrick ? 'Make Normal Brick' : 'Make Kill Brick';
+                    contextMenuDiv.appendChild(uiManager.createContextMenuButton(toggleKillText, () => editor.toggleKillBrick(index)));
+                    contextMenuDiv.appendChild(document.createElement('hr'));
+                    if (brick.movementType !== 'vertical') {
+                        contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Vertical Mover', () => editor.setMovementType(index, 'vertical')));
+                    }
+                    if (brick.movementType !== 'horizontal') {
+                        contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Horizontal Mover', () => editor.setMovementType(index, 'horizontal')));
+                    }
+                    if (brick.movementType !== null) {
+                        contextMenuDiv.appendChild(uiManager.createContextMenuButton('Make Static', () => editor.setMovementType(index, null)));
+                    }
+                    contextMenuDiv.appendChild(document.createElement('hr'));
+                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Copy', editor.handleCopy));
+                    contextMenuDiv.appendChild(uiManager.createContextMenuButton('Delete Brick', () => editor.deleteSingleBrick(index)));
+                } else if (target.type === 'player' || target.type === 'hole') {
+                     contextMenuDiv.appendChild(uiManager.createContextMenuButton('Cannot Delete', () => { uiManager.showMessage("Player and Hole cannot be deleted.", 1500); }));
+                }
+            }
+
+            contextMenuDiv.style.left = `${x}px`;
+            contextMenuDiv.style.top = `${y}px`;
+            contextMenuDiv.style.display = 'block';
+        },
+        hideContextMenu: () => {
+            contextMenuDiv.style.display = 'none';
+            editorState.contextMenuTarget = null;
+        },
+        createContextMenuButton: (text, onClickAction) => {
+            const button = document.createElement('button');
+            button.textContent = text;
+            button.onclick = () => {
+                onClickAction();
+                uiManager.hideContextMenu();
+            };
+            return button;
+        },
+        createLevelControlButton: (html, title, onClickAction, disabled = false) => {
+            const button = document.createElement('button');
+            button.innerHTML = html;
+            button.title = title;
+            button.disabled = disabled;
+            button.onclick = (e) => {
+                e.stopPropagation();
+                onClickAction();
+            };
+            return button;
+        },
+        updateCursorStyle: (mx, my) => {
+            if (!startMenu.classList.contains('hidden') || gameState.mode !== 'editor' || uiManager.isPointerOverUI(mx, my)) {
+                canvas.style.cursor = 'default';
+                return;
+            }
+
+            let cursorSet = false;
+
+            if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') {
+                const brick = gameState.bricks[editorState.selectedItems[0].index];
+                if (brick) {
+                    const handles = utils.getBrickHandles(brick);
+                    if (Math.hypot(mx - handles.rotate.x, my - handles.rotate.y) <= HANDLE_SIZE * 1.5) {
+                        canvas.style.cursor = 'grab';
+                        cursorSet = true;
+                    } else {
+                        for (const type of ['tl', 'tr', 'bl', 'br']) {
+                            if (Math.hypot(mx - handles[type].x, my - handles[type].y) <= HANDLE_SIZE * 1.2) {
+                                canvas.style.cursor = (type === 'tl' || type === 'br') ? 'nwse-resize' : 'nesw-resize';
+                                cursorSet = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!cursorSet && editorState.selectedItems.length > 0) {
+                if (editor.isPointOverSelection(mx, my)) {
+                    canvas.style.cursor = 'move';
+                    cursorSet = true;
+                }
+            }
+
+            if (!cursorSet) {
+                const itemAtPoint = editor.getItemAtPoint(mx, my);
+                if (itemAtPoint !== null) {
+                    canvas.style.cursor = 'pointer';
+                    cursorSet = true;
+                }
+            }
+
+            if (!cursorSet) {
+                canvas.style.cursor = 'default';
+            }
+        },
+        isPointerOverUI: (px, py) => {
+            if (!startMenu.classList.contains('hidden')) {
+                 const startRect = startMenu.getBoundingClientRect();
+                 if (px >= startRect.left && px <= startRect.right && py >= startRect.top && py <= startRect.bottom) {
+                     return true;
+                 }
+            }
+            if (!menuDiv.classList.contains('hidden') && !menuDiv.classList.contains('initially-hidden')) {
+                const menuRect = menuDiv.getBoundingClientRect();
+                if (px >= menuRect.left && px <= menuRect.right && py >= menuRect.top && py <= menuRect.bottom) {
+                    return true;
+                }
+            }
+            if (!showMenuButton.classList.contains('hidden')) {
+                const buttonRect = showMenuButton.getBoundingClientRect();
+                if (px >= buttonRect.left && px <= buttonRect.right && py >= buttonRect.top && py <= buttonRect.bottom) {
+                    return true;
+                }
+            }
+            if (contextMenuDiv.style.display === 'block') {
+                 const contextRect = contextMenuDiv.getBoundingClientRect();
+                 if (px >= contextRect.left && px <= contextRect.right && py >= contextRect.top && py <= contextRect.bottom) {
+                     return true;
+                 }
+            }
+            if (messageBox.style.display === 'block') {
+                 const messageRect = messageBox.getBoundingClientRect();
+                 if (px >= messageRect.left && px <= messageRect.right && py >= messageRect.top && py <= messageRect.bottom) {
+                     return true;
+                 }
+            }
+            return false;
+        },
+        updateMarqueeBox: () => {
+            if (editorState.isMarqueeSelecting) {
+                const x = Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x);
+                const y = Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y);
+                const width = Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x);
+                const height = Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y);
+                marqueeBox.style.left = `${x}px`;
+                marqueeBox.style.top = `${y}px`;
+                marqueeBox.style.width = `${width}px`;
+                marqueeBox.style.height = `${height}px`;
+                marqueeBox.style.display = 'block';
+            } else {
+                marqueeBox.style.display = 'none';
+            }
+        },
+        updateBrickPropertiesUI: () => {
+            if (editorState.isUpdatingPropertiesFromInput) return;
+
+            if (gameState.mode === 'editor' && editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') {
+                const brickIndex = editorState.selectedItems[0].index;
+                if (brickIndex !== undefined && brickIndex >= 0 && brickIndex < gameState.bricks.length) {
+                    const brick = gameState.bricks[brickIndex];
+                    if (brick) {
+                        brickPropertiesDiv.classList.remove('hidden');
+                        const isMover = brick.movementType === 'vertical' || brick.movementType === 'horizontal';
+
+                        propMoveRangeInput.disabled = !isMover;
+                        propMoveSpeedInput.disabled = !isMover;
+
+                        propMoveRangeInput.value = isMover ? (brick.moveRange ?? DEFAULT_MOVE_RANGE).toFixed(1) : '';
+                        propMoveSpeedInput.value = isMover ? (brick.moveSpeed ?? DEFAULT_MOVE_SPEED).toFixed(1) : '';
+
+                        propMoveRangeInput.placeholder = isMover ? '' : 'N/A (Static)';
+                        propMoveSpeedInput.placeholder = isMover ? '' : 'N/A (Static)';
+                        return;
+                    }
+                }
+            }
+            brickPropertiesDiv.classList.add('hidden');
+        }
+    };
+
+    // --- Game Logic ---
+    const gameLogic = {
+        update: (deltaTime) => {
+             if (!startMenu.classList.contains('hidden')) return;
+
+             const time = Date.now() * 0.001;
+             gameState.bricks.forEach(brick => {
+                 if (brick.movementType && brick.initialX !== undefined && brick.initialY !== undefined) {
+                     const speed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED;
+                     const range = brick.moveRange ?? DEFAULT_MOVE_RANGE;
+                     const offset = range * Math.sin(time * speed);
+
+                     if (brick.movementType === 'vertical') {
+                         brick.y = brick.initialY + offset;
+                     } else if (brick.movementType === 'horizontal') {
+                         brick.x = brick.initialX + offset;
+                     }
+                 }
+             });
+
+
+            if (gameState.mode === 'editor') return;
+
+            if (gameState.ball.fired) {
+                gameState.ball.x += gameState.ball.vx;
+                gameState.ball.y += gameState.ball.vy;
+
+                if (gameState.ball.x - gameState.ball.radius < 0 || gameState.ball.x + gameState.ball.radius > canvas.width || gameState.ball.y - gameState.ball.radius < 0) {
+                    gameLogic.restartLevelAttempt("Hit wall!");
+                    return;
+                }
+                if (gameState.ball.y > canvas.height + gameState.ball.radius * 2) {
+                    gameLogic.restartLevelAttempt("Fell off bottom!");
+                    return;
+                }
+
+                for (const brick of gameState.bricks) {
+                    const collision = utils.checkCircleRectCollision(gameState.ball, brick);
+                    if (collision.collision) {
+                        if (brick.isKillBrick) {
+                            gameLogic.restartLevelAttempt("Hit a kill brick!");
+                            return;
+                        }
+
+                        const pushVector = Vec.scale(collision.normal, collision.overlap * COLLISION_PUSH_FACTOR);
+                        gameState.ball.x += pushVector.x;
+                        gameState.ball.y += pushVector.y;
+
+                        const velocity = Vec.create(gameState.ball.vx, gameState.ball.vy);
+                        const reflectedVel = Vec.reflect(velocity, collision.normal);
+                        gameState.ball.vx = reflectedVel.x;
+                        gameState.ball.vy = reflectedVel.y;
+
+                    }
+                }
+
+                const playerRect = { x: gameState.player.x, y: gameState.player.y, width: gameState.player.width, height: gameState.player.height };
+                const ballRect = { x: gameState.ball.x - gameState.ball.radius, y: gameState.ball.y - gameState.ball.radius, width: gameState.ball.radius * 2, height: gameState.ball.radius * 2 };
+                if (utils.doRectsOverlap(ballRect, playerRect)) {
+                    gameLogic.restartLevelAttempt("Ball hit player!");
+                    return;
+                }
+
+                const distToHoleSq = Vec.lenSq(Vec.sub(Vec.create(gameState.ball.x, gameState.ball.y), Vec.create(gameState.hole.x, gameState.hole.y)));
+                const radiiSumSq = (gameState.ball.radius + gameState.hole.radius) * (gameState.ball.radius + gameState.hole.radius);
+                if (distToHoleSq < radiiSumSq) {
+                    uiManager.showMessage(`Level ${gameState.currentLevelIndex + 1} Complete!`);
+                    const nextLevelIndex = gameState.currentLevelIndex + 1;
+                    if (nextLevelIndex < levelManager.levels.length) {
+                        levelManager.selectLevelToEdit(nextLevelIndex);
+                        gameLogic.startGame();
+                    } else {
+                        uiManager.showMessage("Congratulations! You beat all levels!", 0);
+                        gameLogic.switchToEditorMode();
+                    }
+                    return;
+                }
+            } else if (gameState.ball.onPlayer) {
+                gameLogic.resetBallPosition();
+            }
+        },
+        resetBall: () => {
+            gameState.ball.fired = false;
+            gameState.ball.onPlayer = true;
+            gameState.ball.vx = 0;
+            gameState.ball.vy = 0;
+            editorState.aim.active = false;
+            editorState.aim.dx = 0;
+            editorState.aim.dy = 0;
+            gameLogic.resetBallPosition();
+        },
+        resetBallPosition: () => {
+            gameState.ball.x = gameState.player.x + gameState.player.width / 2;
+            gameState.ball.y = gameState.player.y - gameState.ball.radius - 2;
+        },
+        fireBall: () => {
+            if (!gameState.ball.onPlayer || gameState.mode === 'editor' || !editorState.aim.active) return;
+            if (Math.abs(editorState.aim.dx) < 0.01 && Math.abs(editorState.aim.dy) < 0.01) return;
+
+            gameState.ball.fired = true;
+            gameState.ball.onPlayer = false;
+            gameState.ball.vx = editorState.aim.dx;
+            gameState.ball.vy = editorState.aim.dy;
+
+            editorState.aim.active = false;
+            editorState.aim.dx = 0;
+            editorState.aim.dy = 0;
+        },
+        restartLevelAttempt: (reason = "Hazard hit!") => {
+            uiManager.showMessage(`${reason} Restarting level.`, MESSAGE_DISPLAY_TIME);
+            gameLogic.resetBall();
+            drawing.draw();
+        },
+        startGame: () => {
+            gameState.mode = 'play';
+            editorState.aim.active = false;
+            uiManager.hideContextMenu();
+            uiManager.hideMessage();
+            editor.resetSelectionAndDragging();
+            levelManager.loadLevelData(gameState.currentLevelIndex);
+            uiManager.updateUIForMode();
+        },
+        switchToEditorMode: () => {
+            gameState.mode = 'editor';
+            editorState.aim.active = false;
+            uiManager.hideContextMenu();
+            levelManager.loadLevelData(gameState.currentLevelIndex);
+            uiManager.updateUIForMode();
+        }
+    };
+
+    // --- Drawing Functions ---
+    const drawing = {
+        draw: () => {
+            if (canvas.classList.contains('hidden')) return;
+
+            ctx.fillStyle = "#f0f8ff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawing.drawHole();
+            gameState.bricks.forEach((brick, index) => {
+                drawing.drawBrick(brick, index);
+            });
+            drawing.drawPlayer();
+            drawing.drawBall();
+
+            if (gameState.mode === 'play' && editorState.aim.active && gameState.ball.onPlayer) {
+                drawing.drawAimLine();
+            }
+            if (gameState.mode === 'editor') {
+                drawing.drawEditorOverlays();
+            }
+        },
+        drawHole: () => {
+            const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'hole');
+            ctx.fillStyle = "#222";
+            ctx.beginPath();
+            ctx.arc(gameState.hole.x, gameState.hole.y, gameState.hole.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (isSelected) {
+                ctx.strokeStyle = SELECTED_ITEM_OUTLINE_COLOR;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        },
+        drawBrick: (brick, index) => {
+            const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'brick' && item.index === index);
+
+            ctx.save();
+
+            const centerX = brick.x + brick.width / 2;
+            const centerY = brick.y + brick.height / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(brick.angle || 0);
+            ctx.translate(-centerX, -centerY);
+
+            let fillColor = BRICK_COLOR;
+            if (brick.isKillBrick) {
+                fillColor = KILL_BRICK_COLOR;
+            } else if (brick.movementType === 'vertical') {
+                fillColor = VERTICAL_MOVER_COLOR;
+            } else if (brick.movementType === 'horizontal') {
+                fillColor = HORIZONTAL_MOVER_COLOR;
+            }
+            if (isSelected) {
+                fillColor = SELECTED_BRICK_COLOR;
+            }
+
+            ctx.fillStyle = fillColor;
+            ctx.strokeStyle = BRICK_STROKE_COLOR;
+            ctx.lineWidth = 1;
+            ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
+            ctx.strokeRect(brick.x, brick.y, brick.width, brick.height);
+
+            ctx.restore();
+        },
+        drawPlayer: () => {
+            const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'player');
+            const player = gameState.player;
+
+            ctx.fillStyle = "#4CAF50";
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            const headX = player.x + player.width / 2;
+            const headY = player.y - PLAYER_HEAD_RADIUS;
+            ctx.fillStyle = "#8BC34A";
+            ctx.beginPath();
+            ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (isSelected) {
+                ctx.strokeStyle = SELECTED_ITEM_OUTLINE_COLOR;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(player.x, player.y, player.width, player.height);
+                ctx.beginPath();
+                ctx.arc(headX, headY, PLAYER_HEAD_RADIUS, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        },
+        drawBall: () => {
+            ctx.save();
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = BALL_OUTLINE_WIDTH;
+            ctx.beginPath();
+            ctx.arc(gameState.ball.x, gameState.ball.y, gameState.ball.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        },
+        drawAimLine: () => {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(gameState.ball.x, gameState.ball.y);
+
+            const potentialVx = editorState.aim.dx;
+            const potentialVy = editorState.aim.dy;
+
+            const endX = gameState.ball.x + potentialVx * AIM_VISUAL_SCALE;
+            const endY = gameState.ball.y + potentialVy * AIM_VISUAL_SCALE;
+
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = "rgba(255, 0, 0, 0.7)";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.beginPath();
+            ctx.arc(endX, endY, 3, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+            ctx.fill();
+            ctx.restore();
+        },
+        drawEditorOverlays: () => {
+            if (editorState.selectedItems.length === 1 && editorState.selectedItems[0].type === 'brick') {
+                const brickIndex = editorState.selectedItems[0].index;
+                 if (brickIndex !== undefined && brickIndex >= 0 && brickIndex < gameState.bricks.length) {
+                     const brick = gameState.bricks[brickIndex];
+                     if (brick) {
+                         if (brick.movementType === 'vertical' || brick.movementType === 'horizontal') {
+                             drawing.drawMovementRange(brick);
+                         }
+                         drawing.drawHandles(brick);
+                     }
+                 }
+            }
+        },
+        drawMovementRange: (brick) => {
+            const initialCenterX = (brick.initialX ?? brick.x) + brick.width / 2;
+            const initialCenterY = (brick.initialY ?? brick.y) + brick.height / 2;
+            const range = brick.moveRange ?? DEFAULT_MOVE_RANGE;
+
+            ctx.save();
+            ctx.strokeStyle = MOVER_RANGE_INDICATOR_COLOR;
+            ctx.lineWidth = MOVER_RANGE_INDICATOR_WIDTH;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+
+            if (brick.movementType === 'vertical') {
+                const y1 = initialCenterY - range;
+                const y2 = initialCenterY + range;
+                ctx.moveTo(initialCenterX, y1);
+                ctx.lineTo(initialCenterX, y2);
+                ctx.moveTo(initialCenterX - 5, y1); ctx.lineTo(initialCenterX + 5, y1);
+                ctx.moveTo(initialCenterX - 5, y2); ctx.lineTo(initialCenterX + 5, y2);
+            } else {
+                const x1 = initialCenterX - range;
+                const x2 = initialCenterX + range;
+                ctx.moveTo(x1, initialCenterY);
+                ctx.lineTo(x2, initialCenterY);
+                ctx.moveTo(x1, initialCenterY - 5); ctx.lineTo(x1, initialCenterY + 5);
+                ctx.moveTo(x2, initialCenterY - 5); ctx.lineTo(x2, initialCenterY + 5);
+            }
+            ctx.stroke();
+            ctx.restore();
+        },
+        drawHandles: (brick) => {
+            const handles = utils.getBrickHandles(brick);
+            ctx.fillStyle = HANDLE_COLOR;
+
+            const handleDrawSize = HANDLE_SIZE * 2;
+            for (const type of ['tl', 'tr', 'bl', 'br']) {
+                 ctx.fillRect(handles[type].x - HANDLE_SIZE, handles[type].y - HANDLE_SIZE, handleDrawSize, handleDrawSize);
+            }
+
+            ctx.beginPath();
+            ctx.arc(handles.rotate.x, handles.rotate.y, HANDLE_SIZE * ROTATE_HANDLE_SIZE_FACTOR, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(handles.center.x, handles.center.y);
+            ctx.lineTo(handles.rotate.x, handles.rotate.y);
+            ctx.strokeStyle = HANDLE_COLOR;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    };
+
+    // --- Editor Logic (Pasted from previous version) ---
+    const editor = {
+        resetSelectionAndHistory: () => { editorState.selectedItems = []; editor.resetSelectionAndDragging(); editorState.history = []; editorState.historyIndex = -1; uiManager.updateBrickPropertiesUI(); },
+        resetSelectionAndDragging: () => { editorState.draggingHandle = null; editorState.isDraggingSelection = false; editorState.isMarqueeSelecting = false; editorState.originalItemStates = []; uiManager.updateMarqueeBox(); uiManager.updateCursorStyle(editorState.mouse.x, editorState.mouse.y); },
+        addBrick: (type = 'static') => { if (gameState.mode !== 'editor' || !editorState.contextMenuTarget || editorState.contextMenuTarget.type !== 'empty') return; historyManager.saveState(); const centerX = editorState.contextMenuTarget.x || editorState.mouse.x; const centerY = editorState.contextMenuTarget.y || editorState.mouse.y; const width = 100; const height = 20; const initialX = centerX - width / 2; const initialY = centerY - height / 2; const newBrick = { x: initialX, y: initialY, width: width, height: height, angle: 0, isKillBrick: type === 'kill', movementType: (type === 'vertical' || type === 'horizontal') ? type : null, moveRange: DEFAULT_MOVE_RANGE, moveSpeed: DEFAULT_MOVE_SPEED, initialX: initialX, initialY: initialY }; gameState.bricks.push(newBrick); editorState.selectedItems = [{ type: 'brick', index: gameState.bricks.length - 1 }]; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
+        toggleKillBrick: (index) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); const brick = gameState.bricks[index]; brick.isKillBrick = !brick.isKillBrick; editor.ensureItemSelected({ type: 'brick', index: index }); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
+        setMovementType: (index, type) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); const brick = gameState.bricks[index]; if (type === null) { brick.movementType = null; if (brick.initialX !== undefined) brick.x = brick.initialX; if (brick.initialY !== undefined) brick.y = brick.initialY; } else { if (brick.movementType !== type || brick.initialX === undefined || brick.initialY === undefined) { brick.initialX = brick.x; brick.initialY = brick.y; } brick.movementType = type; brick.moveRange = brick.moveRange ?? DEFAULT_MOVE_RANGE; brick.moveSpeed = brick.moveSpeed ?? DEFAULT_MOVE_SPEED; const levelData = levelManager.levels[gameState.currentLevelIndex]; const savedWidth = levelData?.savedCanvasWidth || canvas.width; const savedHeight = levelData?.savedCanvasHeight || canvas.height; const scaleX = (savedWidth > 0) ? canvas.width / savedWidth : 1; const scaleY = (savedHeight > 0) ? canvas.height / savedHeight : 1; if (brick.movementType === 'horizontal') { brick.moveRange = (brick.moveRange ?? DEFAULT_MOVE_RANGE) * scaleX; } else if (brick.movementType === 'vertical') { brick.moveRange = (brick.moveRange ?? DEFAULT_MOVE_RANGE) * scaleY; } } editor.ensureItemSelected({ type: 'brick', index: index }); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
+        deleteSingleBrick: (index) => { if (gameState.mode !== 'editor' || index < 0 || index >= gameState.bricks.length) return; historyManager.saveState(); gameState.bricks.splice(index, 1); editorState.selectedItems = editorState.selectedItems .filter(item => !(item.type === 'brick' && item.index === index)) .map(item => { if (item.type === 'brick' && item.index > index) { item.index--; } return item; }); editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
+        deleteSelectedItems: () => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return; historyManager.saveState(); const itemsToDelete = editorState.selectedItems.filter(item => item.type === 'brick'); const triedToDeletePlayer = editorState.selectedItems.some(item => item.type === 'player'); const triedToDeleteHole = editorState.selectedItems.some(item => item.type === 'hole'); if (itemsToDelete.length === 0 && (triedToDeletePlayer || triedToDeleteHole)) { uiManager.showMessage("Player and Hole cannot be deleted.", 1500); return; } if (itemsToDelete.length === 0) return; const brickIndicesToDelete = itemsToDelete.map(item => item.index).sort((a, b) => b - a); brickIndicesToDelete.forEach(index => { if (index >= 0 && index < gameState.bricks.length) { gameState.bricks.splice(index, 1); } else { console.warn("Attempted to delete invalid brick index during multi-delete:", index); } }); editorState.selectedItems = []; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); if (triedToDeletePlayer || triedToDeleteHole) { uiManager.showMessage("Deleted selected brick(s). Player and Hole cannot be deleted.", 2000); } },
+        handleCopy: () => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0) return; editorState.clipboard = editorState.selectedItems .filter(item => item.type === 'brick') .map(item => { if (item.index !== undefined && item.index >= 0 && item.index < gameState.bricks.length) { return utils.deepClone(gameState.bricks[item.index]); } return null; }) .filter(data => data !== null); if (editorState.clipboard.length > 0) { uiManager.showMessage(`Copied ${editorState.clipboard.length} brick(s).`, 1000); } else { uiManager.showMessage(`Cannot copy Player or Hole.`, 1000); } },
+        handlePaste: () => { if (gameState.mode !== 'editor' || editorState.clipboard.length === 0) return; historyManager.saveState(); const newSelection = []; editorState.clipboard.forEach(itemData => { if (itemData) { const newItem = utils.deepClone(itemData); newItem.x += PASTE_OFFSET; newItem.y += PASTE_OFFSET; if (newItem.initialX !== undefined) newItem.initialX += PASTE_OFFSET; if (newItem.initialY !== undefined) newItem.initialY += PASTE_OFFSET; gameState.bricks.push(newItem); newSelection.push({ type: 'brick', index: gameState.bricks.length - 1 }); } }); editorState.selectedItems = newSelection; editor.resetSelectionAndDragging(); uiManager.updateBrickPropertiesUI(); drawing.draw(); },
+        handleNudge: (dx, dy) => { if (gameState.mode !== 'editor' || editorState.selectedItems.length === 0 || (dx === 0 && dy === 0)) return; if (!editorState.isNudging) { historyManager.saveState(); editorState.isNudging = true; } editorState.selectedItems.forEach(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (brick) { brick.x += dx; brick.y += dy; if (brick.initialX !== undefined) brick.initialX += dx; if (brick.initialY !== undefined) brick.initialY += dy; } } else if (item.type === 'player') { gameState.player.x += dx; gameState.player.y += dy; if (gameState.ball.onPlayer) gameLogic.resetBallPosition(); } else if (item.type === 'hole') { gameState.hole.x += dx; gameState.hole.y += dy; } }); drawing.draw(); },
+        selectItem: (itemToSelect, ctrlPressed) => { if (!itemToSelect) return; const alreadySelected = editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index ); if (ctrlPressed) { if (alreadySelected) { editorState.selectedItems = editorState.selectedItems.filter(sel => !(sel.type === itemToSelect.type && sel.index === itemToSelect.index) ); } else { editorState.selectedItems.push(itemToSelect); } } else { if (!alreadySelected || editorState.selectedItems.length > 1) { editorState.selectedItems = [itemToSelect]; } } uiManager.updateBrickPropertiesUI(); },
+        ensureItemSelected: (itemToSelect) => { if (!editorState.selectedItems.some(sel => sel.type === itemToSelect.type && sel.index === itemToSelect.index)) { editorState.selectedItems.push(itemToSelect); uiManager.updateBrickPropertiesUI(); } },
+        getItemAtPoint: (px, py) => { for (let i = gameState.bricks.length - 1; i >= 0; i--) { if (utils.isPointInRotatedRect(px, py, gameState.bricks[i])) { return { type: 'brick', index: i }; } } const player = gameState.player; const headCenter = { x: player.x + player.width / 2, y: player.y - PLAYER_HEAD_RADIUS }; const distSqToHead = Vec.lenSq(Vec.sub({ x: px, y: py }, headCenter)); const isOverHead = distSqToHead <= (PLAYER_HEAD_RADIUS * PLAYER_HEAD_RADIUS); const isOverBody = px >= player.x && px <= player.x + player.width && py >= player.y && py <= player.y + player.height; if (isOverHead || isOverBody) { return { type: 'player', index: null }; } const distSqToHole = Vec.lenSq(Vec.sub({ x: px, y: py }, gameState.hole)); if (distSqToHole <= (gameState.hole.radius * gameState.hole.radius)) { return { type: 'hole', index: null }; } return null; },
+        isPointOverSelection: (px, py) => { return editorState.selectedItems.some(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick && utils.isPointInRotatedRect(px, py, brick); } else if (item.type === 'player') { const player = gameState.player; const headCenter = { x: player.x + player.width / 2, y: player.y - PLAYER_HEAD_RADIUS }; const distSqToHead = Vec.lenSq(Vec.sub({ x: px, y: py }, headCenter)); const isOverHead = distSqToHead <= (PLAYER_HEAD_RADIUS * PLAYER_HEAD_RADIUS); const isOverBody = px >= player.x && px <= player.x + player.width && py >= player.y && py <= player.y + player.height; return isOverHead || isOverBody; } else if (item.type === 'hole') { const distSqToHole = Vec.lenSq(Vec.sub({ x: px, y: py }, gameState.hole)); return distSqToHole <= (gameState.hole.radius * gameState.hole.radius); } return false; }); },
+        getHandleAtPoint: (px, py) => { if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return null; } const brickIndex = editorState.selectedItems[0].index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return null; const brick = gameState.bricks[brickIndex]; if (!brick) return null; const handles = utils.getBrickHandles(brick); const handleHitRadiusSq = (HANDLE_SIZE * 1.5) * (HANDLE_SIZE * 1.5); if (Vec.lenSq(Vec.sub({ x: px, y: py }, handles.rotate)) <= handleHitRadiusSq * (ROTATE_HANDLE_SIZE_FACTOR * ROTATE_HANDLE_SIZE_FACTOR)) { return { type: 'rotate', itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; } for (const type of ['tl', 'tr', 'bl', 'br']) { if (Vec.lenSq(Vec.sub({ x: px, y: py }, handles[type])) <= handleHitRadiusSq) { return { type: type, itemRef: editorState.selectedItems[0], startBrickState: utils.deepClone(brick) }; } } return null; },
+        finalizeMarqueeSelection: (ctrlPressed) => { const marqueeRect = { x: Math.min(editorState.marqueeStart.x, editorState.marqueeEnd.x), y: Math.min(editorState.marqueeStart.y, editorState.marqueeEnd.y), width: Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x), height: Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y) }; if (marqueeRect.width < 5 && marqueeRect.height < 5) { if (!ctrlPressed) { editorState.selectedItems = []; } uiManager.updateBrickPropertiesUI(); return; } const newlySelected = []; gameState.bricks.forEach((brick, index) => { const brickBounds = utils.getRectBoundingBox(brick); if (utils.doRectsOverlap(marqueeRect, brickBounds)) { newlySelected.push({ type: 'brick', index: index }); } }); const player = gameState.player; const playerBounds = { x: player.x, y: player.y - PLAYER_HEAD_RADIUS, width: player.width, height: player.height + PLAYER_HEAD_RADIUS }; if (utils.doRectsOverlap(marqueeRect, playerBounds)) { newlySelected.push({ type: 'player', index: null }); } const holeBounds = { x: gameState.hole.x - gameState.hole.radius, y: gameState.hole.y - gameState.hole.radius, width: gameState.hole.radius * 2, height: gameState.hole.radius * 2 }; if (utils.doRectsOverlap(marqueeRect, holeBounds)) { newlySelected.push({ type: 'hole', index: null }); } if (ctrlPressed) { newlySelected.forEach(newItem => { if (!editorState.selectedItems.some(sel => sel.type === newItem.type && sel.index === newItem.index)) { editorState.selectedItems.push(newItem); } }); } else { editorState.selectedItems = newlySelected; } uiManager.updateBrickPropertiesUI(); },
+        updateItemsDuringDrag: (dx, dy) => { editorState.selectedItems.forEach((item, i) => { const origState = editorState.originalItemStates[i]; if (!origState) return; if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (brick) { brick.x = origState.x + dx; brick.y = origState.y + dy; if (brick.initialX !== undefined) brick.initialX = origState.initialX + dx; if (brick.initialY !== undefined) brick.initialY = origState.initialY + dy; } } else if (item.type === 'player') { gameState.player.x = origState.x + dx; gameState.player.y = origState.y + dy; if (gameState.ball.onPlayer) gameLogic.resetBallPosition(); } else if (item.type === 'hole') { gameState.hole.x = origState.x + dx; gameState.hole.y = origState.y + dy; } }); },
+        updateBrickDuringResize: (handleType, currentMouseX, currentMouseY) => { if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return; const brickIndex = editorState.draggingHandle.itemRef.index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const origState = editorState.draggingHandle.startBrickState; const origAngle = origState.angle || 0; const cosA = Math.cos(-origAngle); const sinA = Math.sin(-origAngle); const ocx = origState.x + origState.width / 2; const ocy = origState.y + origState.height / 2; const dxWorld = currentMouseX - ocx; const dyWorld = currentMouseY - ocy; const localMx = dxWorld * cosA - dyWorld * sinA; const localMy = dxWorld * sinA + dyWorld * cosA; let newHalfWidth, newHalfHeight; switch (handleType) { case 'br': newHalfWidth = localMx; newHalfHeight = localMy; break; case 'bl': newHalfWidth = -localMx; newHalfHeight = localMy; break; case 'tr': newHalfWidth = localMx; newHalfHeight = -localMy; break; case 'tl': newHalfWidth = -localMx; newHalfHeight = -localMy; break; default: return; } newHalfWidth = Math.max(MIN_BRICK_DIMENSION / 2, newHalfWidth); newHalfHeight = Math.max(MIN_BRICK_DIMENSION / 2, newHalfHeight); const newWidth = 2 * newHalfWidth; const newHeight = 2 * newHalfHeight; const centerShiftXLocal = (newWidth - origState.width) / 2; const centerShiftYLocal = (newHeight - origState.height) / 2; let shiftFactorX = 0, shiftFactorY = 0; switch(handleType) { case 'tl': shiftFactorX = -1; shiftFactorY = -1; break; case 'tr': shiftFactorX = 1; shiftFactorY = -1; break; case 'bl': shiftFactorX = -1; shiftFactorY = 1; break; case 'br': shiftFactorX = 1; shiftFactorY = 1; break; } const finalShiftLocalX = centerShiftXLocal * shiftFactorX; const finalShiftLocalY = centerShiftYLocal * shiftFactorY; const cosARot = Math.cos(origAngle); const sinARot = Math.sin(origAngle); const centerShiftWorldX = finalShiftLocalX * cosARot - finalShiftLocalY * sinARot; const centerShiftWorldY = finalShiftLocalX * sinARot + finalShiftLocalY * cosARot; const newCx = ocx + centerShiftWorldX; const newCy = ocy + centerShiftWorldY; brick.width = newWidth; brick.height = newHeight; brick.angle = origAngle; const localTLX = -newWidth / 2; const localTLY = -newHeight / 2; brick.x = newCx + (localTLX * cosARot - localTLY * sinARot); brick.y = newCy + (localTLX * sinARot + localTLY * cosARot); if (brick.initialX !== undefined) { brick.initialX = brick.x; } if (brick.initialY !== undefined) { brick.initialY = brick.y; } },
+        updateBrickDuringRotate: (currentMouseX, currentMouseY) => { if (!editorState.draggingHandle || !editorState.draggingHandle.itemRef || editorState.draggingHandle.startBrickState === undefined) return; const brickIndex = editorState.draggingHandle.itemRef.index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; const origState = editorState.draggingHandle.startBrickState; const center = utils.getBrickHandles(origState).center; const startAngle = Math.atan2(editorState.dragStart.y - center.y, editorState.dragStart.x - center.x); const currentAngle = Math.atan2(currentMouseY - center.y, currentMouseX - center.x); brick.angle = origState.angle + (currentAngle - startAngle); brick.x = origState.x; brick.y = origState.y; brick.width = origState.width; brick.height = origState.height; },
+        finalizeItemManipulation: () => { if (editorState.draggingHandle || editorState.isDraggingSelection) { editorState.selectedItems.forEach(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; if (brick) { brick.initialX = brick.x; brick.initialY = brick.y; } } }); const previousState = editorState.history[editorState.historyIndex]; const currentState = historyManager.getCurrentStateSnapshot(); if (previousState && utils.statesAreEqual(previousState, currentState)) { /* No change */ } else { /* State changed */ } } },
+        handlePropertyChange: (event) => { if (editorState.selectedItems.length !== 1 || editorState.selectedItems[0].type !== 'brick') { return; } const brickIndex = editorState.selectedItems[0].index; if (brickIndex === undefined || brickIndex < 0 || brickIndex >= gameState.bricks.length) return; const brick = gameState.bricks[brickIndex]; if (!brick || !brick.movementType) return; const propertyName = event.target.name; const value = parseFloat(event.target.value); if (isNaN(value) || value < 0) { console.warn(`Invalid value entered for ${propertyName}:`, event.target.value); uiManager.updateBrickPropertiesUI(); return; } let valueToStore = value; if (propertyName === 'moveRange') { const levelData = levelManager.levels[gameState.currentLevelIndex]; const savedWidth = levelData?.savedCanvasWidth || canvas.width; const savedHeight = levelData?.savedCanvasHeight || canvas.height; const scaleX = (savedWidth > 0) ? canvas.width / savedWidth : 1; const scaleY = (savedHeight > 0) ? canvas.height / savedHeight : 1; if (brick.movementType === 'horizontal' && scaleX !== 0) { valueToStore = value / scaleX; } else if (brick.movementType === 'vertical' && scaleY !== 0) { valueToStore = value / scaleY; } } if (brick[propertyName] === valueToStore) { if (propertyName === 'moveRange' && brick[propertyName].toFixed(1) !== value.toFixed(1)) { uiManager.updateBrickPropertiesUI(); } return; } historyManager.saveState(); brick[propertyName] = valueToStore; editorState.isUpdatingPropertiesFromInput = true; drawing.draw(); uiManager.updateBrickPropertiesUI(); editorState.isUpdatingPropertiesFromInput = false; }
+    };
+    // --- End full editor object ---
+
+
+    // --- Event Handlers (Pasted from previous version) ---
+    const eventHandlers = {
+        handleResize: () => { utils.resizeCanvas(); },
+        handleContextMenu: (e) => { e.preventDefault(); uiManager.hideContextMenu(); if (gameState.mode !== 'editor' || uiManager.isPointerOverUI(e.clientX, e.clientY)) { return; } const mx = e.clientX; const my = e.clientY; let targetItem = editor.getItemAtPoint(mx, my); let targetType = 'empty'; let targetIndex = null; if (targetItem) { targetType = targetItem.type; targetIndex = targetItem.index; if (!editorState.selectedItems.some(sel => sel.type === targetType && sel.index === targetIndex)) { editorState.selectedItems = [targetItem]; uiManager.updateBrickPropertiesUI(); drawing.draw(); } } else { editorState.selectedItems = []; uiManager.updateBrickPropertiesUI(); drawing.draw(); } editorState.contextMenuTarget = { type: targetType, index: targetIndex, x: mx, y: my }; uiManager.showContextMenu(mx, my); },
+        handleMouseDown: (e) => { if (e.button !== 0 || uiManager.isPointerOverUI(e.clientX, e.clientY)) { return; } editorState.mouse.down = true; editorState.mouse.x = e.clientX; editorState.mouse.y = e.clientY; editorState.mouse.dragStartX = editorState.mouse.x; editorState.mouse.dragStartY = editorState.mouse.y; uiManager.hideContextMenu(); if (gameState.mode === 'editor') { const mx = editorState.mouse.x; const my = editorState.mouse.y; const ctrlPressed = e.ctrlKey || e.metaKey; const clickedHandle = editor.getHandleAtPoint(mx, my); if (clickedHandle) { editorState.draggingHandle = clickedHandle; editorState.dragStart = { x: mx, y: my }; historyManager.saveState(); canvas.style.cursor = clickedHandle.type === 'rotate' ? 'grabbing' : (clickedHandle.type === 'tl' || clickedHandle.type === 'br') ? 'nwse-resize' : 'nesw-resize'; editorState.isDraggingSelection = false; editorState.isMarqueeSelecting = false; } else { const clickedItem = editor.getItemAtPoint(mx, my); if (clickedItem) { const isClickOnCurrentSelection = editor.isPointOverSelection(mx, my); if (!isClickOnCurrentSelection) { editor.selectItem(clickedItem, ctrlPressed); } else if (!ctrlPressed) { if (editorState.selectedItems.length > 1) { editor.selectItem(clickedItem, false); } } else { editor.selectItem(clickedItem, true); } if (editor.isPointOverSelection(mx, my)) { editorState.isDraggingSelection = true; editorState.dragStart = { x: mx, y: my }; editorState.originalItemStates = editorState.selectedItems.map(item => { if (item.type === 'brick') { const brick = gameState.bricks[item.index]; return brick ? { ...utils.deepClone(brick), initialX: brick.initialX, initialY: brick.initialY } : null; } if (item.type === 'player') return utils.deepClone(gameState.player); if (item.type === 'hole') return utils.deepClone(gameState.hole); return null; }).filter(s => s !== null); historyManager.saveState(); canvas.style.cursor = 'move'; } editorState.isMarqueeSelecting = false; } else { if (!ctrlPressed) { editorState.selectedItems = []; uiManager.updateBrickPropertiesUI(); } editorState.isMarqueeSelecting = true; editorState.marqueeStart = { x: mx, y: my }; editorState.marqueeEnd = { x: mx, y: my }; uiManager.updateMarqueeBox(); canvas.style.cursor = 'crosshair'; editorState.isDraggingSelection = false; } } drawing.draw(); } else { if (gameState.ball.onPlayer) { editorState.aim.active = true; eventHandlers.updateAim(editorState.mouse.x, editorState.mouse.y); drawing.draw(); } } },
+        handleMouseMove: (e) => { editorState.mouse.x = e.clientX; editorState.mouse.y = e.clientY; const mx = editorState.mouse.x; const my = editorState.mouse.y; if (gameState.mode === 'editor') { if (editorState.mouse.down) { const dx = mx - editorState.dragStart.x; const dy = my - editorState.dragStart.y; if (editorState.draggingHandle) { const handleType = editorState.draggingHandle.type; if (handleType === 'rotate') { editor.updateBrickDuringRotate(mx, my); canvas.style.cursor = 'grabbing'; } else { editor.updateBrickDuringResize(handleType, mx, my); } drawing.draw(); } else if (editorState.isDraggingSelection) { canvas.style.cursor = 'move'; editor.updateItemsDuringDrag(dx, dy); drawing.draw(); } else if (editorState.isMarqueeSelecting) { canvas.style.cursor = 'crosshair'; editorState.marqueeEnd = { x: mx, y: my }; uiManager.updateMarqueeBox(); } } else { uiManager.updateCursorStyle(mx, my); } } else { if (editorState.aim.active && gameState.ball.onPlayer) { eventHandlers.updateAim(mx, my); drawing.draw(); } } },
+        handleMouseUp: (e) => { if (e.button !== 0 || !editorState.mouse.down) return; editorState.mouse.down = false; if (gameState.mode === 'editor') { editor.finalizeItemManipulation(); if (editorState.isMarqueeSelecting) { editor.finalizeMarqueeSelection(e.ctrlKey || e.metaKey); } const dx = editorState.mouse.x - editorState.mouse.dragStartX; const dy = editorState.mouse.y - editorState.mouse.dragStartY; const isSimpleClick = Vec.lenSq({x: dx, y: dy}) < CLICK_THRESHOLD_SQ; if (isSimpleClick && (e.ctrlKey || e.metaKey)) { const clickedItem = editor.getItemAtPoint(e.clientX, e.clientY); if (clickedItem) { /* Selection handled in mousedown */ } } editor.resetSelectionAndDragging(); drawing.draw(); } else { if (editorState.aim.active && gameState.ball.onPlayer) { gameLogic.fireBall(); editorState.aim.active = false; drawing.draw(); } } uiManager.updateCursorStyle(e.clientX, e.clientY); },
+        handleKeyDown: (e) => { if (uiManager.isPointerOverUI(editorState.mouse.x, editorState.mouse.y)) { const isInputFocused = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA'); if (!isInputFocused && e.key.length === 1) { /* Block typing */ } else { return; } } if (gameState.mode !== 'editor') return; const activeEl = document.activeElement; const isInputFocused = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable); const ctrlPressed = e.ctrlKey || e.metaKey; if (isInputFocused) { if (ctrlPressed && ['a', 'c', 'v', 'x', 'z', 'y'].includes(e.key.toLowerCase())) { return; } if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Delete', 'Backspace', 'Home', 'End', 'Tab'].includes(e.key)) { return; } if (!ctrlPressed && !e.altKey && e.key.length === 1) { return; } if (['Delete', 'Backspace'].includes(e.key) && !ctrlPressed) return; if (e.key.startsWith('Arrow')) return; if (e.key === 'Escape') { activeEl.blur(); return; } e.preventDefault(); return; } if (ctrlPressed && e.key.toLowerCase() === 'z') { e.preventDefault(); historyManager.undo(); return; } if (ctrlPressed && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); historyManager.redo(); return; } if (ctrlPressed && e.key.toLowerCase() === 'c') { e.preventDefault(); editor.handleCopy(); return; } if (ctrlPressed && e.key.toLowerCase() === 'v') { e.preventDefault(); editor.handlePaste(); return; } if ((e.key === "Delete" || e.key === "Backspace") && editorState.selectedItems.length > 0) { e.preventDefault(); editor.deleteSelectedItems(); return; } let dx = 0, dy = 0; switch (e.key) { case "ArrowUp": dy = -NUDGE_AMOUNT; break; case "ArrowDown": dy = NUDGE_AMOUNT; break; case "ArrowLeft": dx = -NUDGE_AMOUNT; break; case "ArrowRight": dx = NUDGE_AMOUNT; break; default: return; } if (dx !== 0 || dy !== 0) { e.preventDefault(); editor.handleNudge(dx, dy); } },
+        handleKeyUp: (e) => { if (gameState.mode !== 'editor') return; if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) { if (editorState.isNudging) { editorState.isNudging = false; } } },
+        updateAim: (mx, my) => { if (!gameState.ball.onPlayer) return; const aimVecRaw = Vec.sub({ x: mx, y: my }, { x: gameState.ball.x, y: gameState.ball.y }); let aimPowerLength = Vec.len(aimVecRaw); aimPowerLength = Math.min(aimPowerLength, AIM_LINE_LENGTH); const power = aimPowerLength / AIM_POWER_FACTOR; const normAimVec = Vec.normalize(aimVecRaw); editorState.aim.dx = normAimVec.x * power; editorState.aim.dy = normAimVec.y * power; if (editorState.aim.dy > MIN_AIM_VY) { editorState.aim.dy = MIN_AIM_VY; } }
+    };
+    // --- End full eventHandlers object ---
+
 
     // --- Game Loop ---
     let lastTimestamp = 0;
     function gameLoop(timestamp) {
-        const deltaTime = (timestamp - lastTimestamp) / 1000; // Delta time in seconds
+        const deltaTime = (timestamp - lastTimestamp) / 1000;
         lastTimestamp = timestamp;
 
-        gameLogic.update(deltaTime); // Pass deltaTime if needed for physics
+        gameLogic.update(deltaTime);
         drawing.draw();
 
         requestAnimationFrame(gameLoop);
@@ -304,8 +1551,7 @@
 
     // --- Initialization ---
     async function init() {
-        console.log("Initializing Bounce Back..."); // *** MODIFIED: Game Name ***
-        // Setup Event Listeners
+        console.log("Initializing Bounce Back...");
         window.addEventListener("resize", eventHandlers.handleResize);
         canvas.addEventListener("contextmenu", eventHandlers.handleContextMenu);
         canvas.addEventListener("mousedown", eventHandlers.handleMouseDown);
@@ -313,37 +1559,38 @@
         canvas.addEventListener("mouseup", eventHandlers.handleMouseUp);
         canvas.addEventListener("mouseleave", () => {
             if (editorState.mouse.down) {
-                 eventHandlers.handleMouseUp({ button: 0, clientX: editorState.mouse.x, clientY: editorState.mouse.y });
+                eventHandlers.handleMouseUp({ button: 0, clientX: editorState.mouse.x, clientY: editorState.mouse.y });
             }
-            editorState.aim.active = false;
+            if (editorState.aim.active) {
+                 editorState.aim.active = false;
+                 drawing.draw();
+            }
         });
         document.addEventListener("keydown", eventHandlers.handleKeyDown);
         document.addEventListener("keyup", eventHandlers.handleKeyUp);
 
-        // Setup Button Listeners
         playButton.onclick = gameLogic.startGame;
         editorButton.onclick = gameLogic.switchToEditorMode;
         showMenuButton.onclick = uiManager.showMenu;
 
-        // Setup Property Input Listeners
         propMoveRangeInput.addEventListener('input', editor.handlePropertyChange);
         propMoveSpeedInput.addEventListener('input', editor.handlePropertyChange);
 
+        startGameButton.addEventListener('click', () => {
+            startMenu.classList.add('hidden');
+            canvas.classList.remove('hidden');
+            menuDiv.classList.remove('initially-hidden');
+            uiManager.showMenu();
+            utils.resizeCanvas(); // Resize now that canvas is visible
+            gameLogic.startGame(); // Start in play mode after menu dismiss
+        });
 
-        // Load data (awaiting the async function)
-        await levelManager.loadLevelsFromStorage(); // Wait for levels to load from storage or fetch
+        await levelManager.loadLevelsFromStorage();
+        utils.resizeCanvas(); // Initial resize for hidden canvas
 
-        // Set initial state based on loaded levels
-        utils.resizeCanvas(); // Initial resize sets canvas size and calls loadLevelData for index 0
-
-        // *** MODIFIED: Start in Play Mode with Menu Hidden ***
-        gameLogic.startGame(); // Start in play mode
-        uiManager.hideMenu(); // Start with menu hidden
-
-        // Start the game loop
         lastTimestamp = performance.now();
         requestAnimationFrame(gameLoop);
-        console.log("Initialization Complete.");
+        console.log("Initialization Complete. Showing Start Menu.");
     }
 
     // --- Start the application ---
