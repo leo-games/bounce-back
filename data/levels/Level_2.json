@@ -2,79 +2,104 @@
   "name": "Level 2",
   "bricks": [
     {
-      "x": 294,
-      "y": 671,
-      "width": 100,
-      "height": 20,
+      "x": 705.6,
+      "y": 1018.8016666666666,
+      "width": 240,
+      "height": 30.366666666666667,
       "angle": 2.334046213752837,
       "isKillBrick": false,
       "movementType": null,
       "moveRange": 50,
-      "moveSpeed": 1
+      "moveSpeed": 1,
+      "initialX": 705.6,
+      "initialY": 1018.8016666666666
     },
     {
-      "x": 268,
-      "y": 84,
-      "width": 100,
-      "height": 20,
+      "x": 1173.1999999999998,
+      "y": 108.53999999999999,
+      "width": 240,
+      "height": 30.366666666666667,
       "angle": 3.9388141864433446,
       "isKillBrick": false,
       "movementType": null,
       "moveRange": 50,
-      "moveSpeed": 1
+      "moveSpeed": 1,
+      "initialX": 1173.1999999999998,
+      "initialY": 108.53999999999999
     },
     {
-      "x": -114.51276197402524,
-      "y": 93.09498337783475,
-      "width": 159.8171826729734,
-      "height": 19.55679223373435,
+      "x": -274.83062873766056,
+      "y": 141.34921642867909,
+      "width": 383.56123841513613,
+      "height": 29.69372954155332,
       "angle": 1.561060890288295,
       "isKillBrick": false,
       "movementType": null,
       "moveRange": 50,
-      "moveSpeed": 1
+      "moveSpeed": 1,
+      "initialX": -274.83062873766056,
+      "initialY": 141.34921642867909
     },
     {
-      "x": -207,
-      "y": 645,
-      "width": 100,
-      "height": 20,
+      "x": -496.79999999999995,
+      "y": 979.3249999999999,
+      "width": 240,
+      "height": 30.366666666666667,
       "angle": 2.3587619601016336,
       "isKillBrick": false,
       "movementType": null,
       "moveRange": 50,
-      "moveSpeed": 1
+      "moveSpeed": 1,
+      "initialX": -496.79999999999995,
+      "initialY": 979.3249999999999
     },
     {
-      "x": -25,
-      "y": 23,
-      "width": 158,
-      "height": 20,
+      "x": 726,
+      "y": 239.92166666666668,
+      "width": 379.2,
+      "height": 30.366666666666667,
       "angle": 0,
       "isKillBrick": false,
       "movementType": null,
       "moveRange": 50,
-      "moveSpeed": 1
+      "moveSpeed": 1,
+      "initialX": 726,
+      "initialY": 239.92166666666668
     },
     {
-      "x": -24,
-      "y": 162,
+      "x": 1221,
+      "y": 530,
       "width": 100,
       "height": 20,
-      "angle": 0,
+      "angle": 2.3163628903927953,
       "isKillBrick": false,
       "movementType": null,
       "moveRange": 50,
-      "moveSpeed": 1
+      "moveSpeed": 1,
+      "initialX": 1221,
+      "initialY": 530
+    },
+    {
+      "x": 703,
+      "y": 517,
+      "width": 100,
+      "height": 20,
+      "angle": 2.3411088472060975,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveRange": 50,
+      "moveSpeed": 1,
+      "initialX": 703,
+      "initialY": 517
     }
   ],
   "player": {
-    "relX": -163,
-    "yOffset": 38
+    "x": 743,
+    "y": 848.9
   },
   "hole": {
-    "relX": 0,
-    "y": 100
+    "x": 960,
+    "y": 151.83333333333334
   },
   "savedCanvasWidth": 1920,
   "savedCanvasHeight": 911
