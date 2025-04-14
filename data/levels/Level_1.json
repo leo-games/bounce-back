@@ -8,31 +8,31 @@
       "isKillBrick": false,
       "movementType": null,
       "moveSpeed": 1,
-      "x": 644,
-      "y": 137,
-      "width": 252,
-      "height": 22,
+      "x": 577,
+      "y": 147,
+      "width": 128.83333333333337,
+      "height": 25.951701427003275,
       "moveRange": 50,
-      "initialX": 644,
-      "initialY": 137
+      "initialX": 577,
+      "initialY": 147
     },
     {
       "angle": 0,
       "isKillBrick": false,
       "movementType": null,
       "moveSpeed": 1,
-      "x": 966,
-      "y": 136,
-      "width": 252,
-      "height": 22,
+      "x": 975,
+      "y": 146,
+      "width": 128.83333333333337,
+      "height": 25.951701427003275,
       "moveRange": 50,
-      "initialX": 966,
-      "initialY": 136
+      "initialX": 975,
+      "initialY": 146
     }
   ],
   "player": {
-    "x": 924,
-    "y": 876
+    "x": 877,
+    "y": 877
   },
   "hole": {
     "x": 930,
