@@ -1,54 +1,41 @@
 {
   "name": "Level 1",
+  "savedCanvasWidth": 1920,
+  "savedCanvasHeight": 911,
   "bricks": [
     {
       "angle": 0,
       "isKillBrick": false,
       "movementType": null,
       "moveSpeed": 1,
-      "x": 1013.1132075471697,
-      "y": 125.91365979381443,
-      "width": 302.9308176100628,
-      "height": 20.956185567010305,
+      "x": 644,
+      "y": 137,
+      "width": 252,
+      "height": 22,
       "moveRange": 50,
-      "initialX": 1013.1132075471697,
-      "initialY": 125.91365979381443
+      "initialX": 644,
+      "initialY": 137
     },
     {
       "angle": 0,
       "isKillBrick": false,
       "movementType": null,
       "moveSpeed": 1,
-      "x": -189,
-      "y": 112,
-      "width": 154,
-      "height": 28,
+      "x": 966,
+      "y": 136,
+      "width": 252,
+      "height": 22,
       "moveRange": 50,
-      "initialX": -189,
-      "initialY": 112
-    },
-    {
-      "angle": 0,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": 608.5849056603773,
-      "y": 124.73969072164948,
-      "width": 302.9308176100628,
-      "height": 20.956185567010305,
-      "moveRange": 50,
-      "initialX": 608.5849056603773,
-      "initialY": 124.73969072164948
+      "initialX": 966,
+      "initialY": 136
     }
   ],
   "player": {
-    "x": 951.5723270440251,
-    "y": 880.4510309278351
+    "x": 924,
+    "y": 876
   },
   "hole": {
-    "x": 961.5094339622641,
-    "y": 77.69458762886597
-  },
-  "savedCanvasWidth": 954,
-  "savedCanvasHeight": 776
+    "x": 930,
+    "y": 97
+  }
 }
