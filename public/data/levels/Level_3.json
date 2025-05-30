@@ -1,0 +1,69 @@
+{
+  "name": "Level 3",
+  "savedCanvasWidth": 800,
+  "savedCanvasHeight": 600,
+  "bricks": [
+    {
+      "angle": 0.3,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveSpeed": 1,
+      "x": 150,
+      "y": 400,
+      "width": 120,
+      "height": 20,
+      "moveRange": 50,
+      "baseWidth": 120,
+      "baseHeight": 20
+    },
+    {
+      "angle": 0,
+      "isKillBrick": false,
+      "movementType": "vertical",
+      "moveSpeed": 1.2,
+      "x": 390,
+      "y": 250,
+      "width": 20,
+      "height": 100,
+      "moveRange": 60,
+      "initialX": 390,
+      "initialY": 250,
+      "baseWidth": 20,
+      "baseHeight": 100
+    },
+    {
+      "angle": 0,
+      "isKillBrick": true,
+      "movementType": null,
+      "moveSpeed": 1,
+      "x": 550,
+      "y": 300,
+      "width": 80,
+      "height": 20,
+      "moveRange": 50,
+      "baseWidth": 80,
+      "baseHeight": 20
+    },
+    {
+      "angle": -0.15,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveSpeed": 1,
+      "x": 500,
+      "y": 160,
+      "width": 100,
+      "height": 20,
+      "moveRange": 50,
+      "baseWidth": 100,
+      "baseHeight": 20
+    }
+  ],
+  "player": {
+    "x": 380,
+    "y": 540
+  },
+  "hole": {
+    "x": 400,
+    "y": 100
+  }
+}

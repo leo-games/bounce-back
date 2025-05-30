@@ -1,0 +1,5 @@
+{
+  "name": "Bounce Back Game",
+  "description": "A responsive React and TypeScript version of the Bounce Back game with a level editor. The game involves controlling a paddle to bounce a ball into a hole, navigating bricks and obstacles. Includes features for level creation, modification, import, and export.",
+  "requestFramePermissions": []
+}
