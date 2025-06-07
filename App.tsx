@@ -528,7 +528,7 @@ const App: React.FC = () => {
 
         if (newBall.x - newBall.radius < 0 || newBall.x + newBall.radius > canvasWidth || newBall.y - newBall.radius < 0) {
           showUIMessage("Hit wall! Restarting.");
-          const ballReset = resetBall(newGameState as GameState);
+          const ballReset = resetBall(newGameState);
           return {...newGameState, ball: {...newGameState.ball, ...ballReset.ball} };
         }
         if (newBall.y > canvasHeight + newBall.radius * 2) {
