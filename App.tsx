@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { GameState, EditorState, LevelData, SelectedItem, Point, Brick, Player, Hole, ContextMenuState, ContextMenuTarget, DraggingHandle, GameHistoryEntry, BrickMovementType, GameHistoryEntry } from './types';
-import *_constants from './constants'; // Import all constants
+import { GameState, EditorState, LevelData, SelectedItem, Point, Brick, Player, Hole, ContextMenuState, ContextMenuTarget, DraggingHandle, GameHistoryEntry, BrickMovementType } from './types';
+import * as _constants from './constants'; // Import all constants
 import { Vec } from './utils/vector';
 import { getRectVertices, getRectAxes, projectShapeOntoAxis, projectCircleOntoAxis, checkCircleRectCollision, isPointInRotatedRect, getBrickHandles, getRectBoundingBox, doRectsOverlap } from './utils/geometry';
 import { deepClone, sanitizeFilename, statesAreEqual } from './utils/common';
@@ -478,13 +478,22 @@ const App: React.FC = () => {
   }, [getCurrentHistorySnapshot]);
 
   useEffect(() => {
-    if (levels.length > 0 && gameState.bricks.length > 0 && gameState.mode === 'editor' && gameStarted) { 
+    // Condition to save initial history state for the editor
+    const shouldSaveInitialHistory =
+      levels.length > 0 &&
+      gameState.bricks.length > 0 &&
+      gameState.mode === 'editor' &&
+      gameStarted;
+
+    if (shouldSaveInitialHistory) {
         const currentSnapshot = getCurrentHistorySnapshot(gameState);
-        if (editorState.history.length === 0 || editorState.historyIndex < 0 || 
-            (editorState.history[editorState.historyIndex] && !statesAreEqual(currentSnapshot, editorState.history[editorState.historyIndex]))) {
-            // This ensures that after loadLevelData sets new bricks, player, hole, etc.,
-            // this new state is captured as the first history entry for that level context.
-             saveHistoryState(true, gameState, editorState);
+        // This ensures that after loadLevelData sets new bricks, player, hole, etc.,
+        // this new state is captured as the first history entry for that level context.
+        const isNewOrDifferentState = editorState.history.length === 0 || editorState.historyIndex < 0 ||
+            (editorState.history[editorState.historyIndex] && !statesAreEqual(currentSnapshot, editorState.history[editorState.historyIndex]));
+        
+        if (isNewOrDifferentState) {
+            saveHistoryState(true, gameState, editorState); 
         }
     }
   }, [gameState.bricks, gameState.player, gameState.hole, gameState.currentLevelIndex, levels, gameState.mode, gameStarted, editorState.history, editorState.historyIndex, getCurrentHistorySnapshot, saveHistoryState]); 
@@ -768,7 +777,7 @@ const App: React.FC = () => {
             const newHistoryIndex = editorState.historyIndex - 1;
             const stateToLoad = editorState.history[newHistoryIndex];
             if (stateToLoad) {
-                const restoredGameState = {
+                const restoredGameState: GameState = { // Add explicit type here
                     ...gameState, 
                     ...stateToLoad 
                 };
@@ -791,7 +800,7 @@ const App: React.FC = () => {
             const newHistoryIndex = editorState.historyIndex + 1;
             const stateToLoad = editorState.history[newHistoryIndex];
              if (stateToLoad) {
-                const restoredGameState = {
+                const restoredGameState: GameState = { // Add explicit type here
                     ...gameState,
                     ...stateToLoad
                 };
