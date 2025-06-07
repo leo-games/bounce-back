@@ -1,4 +1,3 @@
-
 // Base Game Constants (Unscaled) - these are design-time values
 export const BASE_PLAYER_WIDTH = 40;
 export const BASE_PLAYER_HEIGHT = 10;
@@ -40,10 +39,10 @@ export const CANVAS_BACKGROUND_COLOR = "#f0f8ff"; // Alice Blue
 
 // Default Files & Fallback Size
 export const DEFAULT_LEVEL_FILES = [
-    '/data/levels/Level_1.json',
-    '/data/levels/Level_2.json',
-    '/data/levels/Level_3.json',
-    '/data/levels/Level_4.json'
+    './data/levels/Level_1.json',
+    './data/levels/Level_2.json',
+    './data/levels/Level_3.json',
+    './data/levels/Level_4.json'
 ];
 // Fallback canvas size serves as the reference for SIZE scaling
 export const FALLBACK_CANVAS_WIDTH = 800;

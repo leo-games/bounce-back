@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { GameState, EditorState, LevelData, SelectedItem, Point, Brick, Player, Hole, ContextMenuState, ContextMenuTarget, DraggingHandle, GameHistoryEntry, BrickMovementType } from './types';
+import { GameState, EditorState, LevelData, SelectedItem, Point, Brick, Player, Hole, ContextMenuState, ContextMenuTarget, DraggingHandle, GameHistoryEntry, BrickMovementType, GameHistoryEntry } from './types';
 import *_constants from './constants'; // Import all constants
 import { Vec } from './utils/vector';
 import { getRectVertices, getRectAxes, projectShapeOntoAxis, projectCircleOntoAxis, checkCircleRectCollision, isPointInRotatedRect, getBrickHandles, getRectBoundingBox, doRectsOverlap } from './utils/geometry';
@@ -811,7 +811,7 @@ const App: React.FC = () => {
           }}
           createDefaultLevelData={createDefaultLevelData}
           validateAndDefaultLevel={validateAndDefaultLevel}
-          resetBall={(currentGS) => setGameState(prev => ({...prev, ...resetBall(currentGS)}))}
+          resetBall={(currentGS: GameState) => setGameState(prev => ({...prev, ...resetBall(currentGS)}))}
         />
       )}
       <button 
