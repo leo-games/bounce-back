@@ -1,0 +1,41 @@
+{
+  "name": "Level 1",
+  "savedCanvasWidth": 1920,
+  "savedCanvasHeight": 911,
+  "bricks": [
+    {
+      "angle": 0,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveSpeed": 1,
+      "x": 577,
+      "y": 147,
+      "width": 128.83333333333337,
+      "height": 25.951701427003275,
+      "moveRange": 50,
+      "initialX": 577,
+      "initialY": 147
+    },
+    {
+      "angle": 0,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveSpeed": 1,
+      "x": 975,
+      "y": 146,
+      "width": 128.83333333333337,
+      "height": 25.951701427003275,
+      "moveRange": 50,
+      "initialX": 975,
+      "initialY": 146
+    }
+  ],
+  "player": {
+    "x": 877,
+    "y": 877
+  },
+  "hole": {
+    "x": 930,
+    "y": 97
+  }
+}
