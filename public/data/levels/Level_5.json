@@ -1,0 +1,58 @@
+{
+  "name": "Level 5",
+  "savedCanvasWidth": 800,
+  "savedCanvasHeight": 600,
+  "bricks": [
+    {
+      "angle": 0.1,
+      "isKillBrick": false,
+      "movementType": "horizontal",
+      "moveSpeed": 1.2,
+      "x": 100,
+      "y": 300,
+      "width": 120,
+      "height": 20,
+      "moveRange": 60,
+      "initialX": 100,
+      "initialY": 300,
+      "baseWidth": 120,
+      "baseHeight": 20
+    },
+    {
+      "angle": 0,
+      "isKillBrick": true,
+      "movementType": "vertical",
+      "moveSpeed": 1.5,
+      "x": 400,
+      "y": 200,
+      "width": 20,
+      "height": 100,
+      "moveRange": 80,
+      "initialX": 400,
+      "initialY": 200,
+      "baseWidth": 20,
+      "baseHeight": 100
+    },
+    {
+      "angle": -0.2,
+      "isKillBrick": false,
+      "movementType": null,
+      "moveSpeed": 1,
+      "x": 550,
+      "y": 400,
+      "width": 150,
+      "height": 20,
+      "moveRange": 50,
+      "baseWidth": 150,
+      "baseHeight": 20
+    }
+  ],
+  "player": {
+    "x": 380,
+    "y": 540
+  },
+  "hole": {
+    "x": 400,
+    "y": 80
+  }
+}
