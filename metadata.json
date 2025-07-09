@@ -1,6 +1,6 @@
 {
   "name": "Bounce Back Game",
-  "description": "A responsive React and TypeScript version of the Bounce Back game with a level editor. The game involves controlling a paddle to bounce a ball into a hole, navigating bricks and obstacles. Includes features for level creation, modification, import, and export.",
+  "description": "React and TypeScript remake of the Bounce Back puzzle game. Bounce the ball off bricks into the hole while avoiding red kill bricks. Some bricks move, and the included level editor lets players create, import and export custom stages.",
   "requestFramePermissions": [],
   "prompt": ""
 }
