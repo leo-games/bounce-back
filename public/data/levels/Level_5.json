@@ -1,0 +1,37 @@
+{
+  "name": "Level 5: The Elevator",
+  "savedCanvasWidth": 1280,
+  "savedCanvasHeight": 720,
+  "bricks": [
+    {
+      "x": 500,
+      "y": 200,
+      "width": 30,
+      "height": 520,
+      "angle": 0,
+      "isKillBrick": false,
+      "movementType": null
+    },
+    {
+      "x": 200,
+      "y": 400,
+      "width": 200,
+      "height": 30,
+      "angle": 0,
+      "isKillBrick": false,
+      "movementType": "Vertical",
+      "moveRange": 150,
+      "moveSpeed": 1,
+      "initialX": 200,
+      "initialY": 400
+    }
+  ],
+  "player": {
+    "x": 250,
+    "y": 680
+  },
+  "hole": {
+    "x": 640,
+    "y": 100
+  }
+}

@@ -1,48 +1,28 @@
 {
-  "name": "Level 3",
+  "name": "Level 3: The Mover",
+  "savedCanvasWidth": 1280,
+  "savedCanvasHeight": 720,
   "bricks": [
     {
-      "x": -468,
-      "y": 591,
-      "width": 100,
-      "height": 20,
-      "angle": 1.2546795156111563,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveRange": 50,
-      "moveSpeed": 1
-    },
-    {
-      "x": -256,
-      "y": 164,
-      "width": 100,
-      "height": 20,
-      "angle": 2.402880655730135,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveRange": 50,
-      "moveSpeed": 1
-    },
-    {
-      "x": -86,
-      "y": 274,
-      "width": 174,
-      "height": 20,
+      "x": 540,
+      "y": 360,
+      "width": 200,
+      "height": 30,
       "angle": 0,
       "isKillBrick": false,
-      "movementType": null,
-      "moveRange": 50,
-      "moveSpeed": 1
+      "movementType": "Horizontal",
+      "moveRange": 200,
+      "moveSpeed": 1.5,
+      "initialX": 540,
+      "initialY": 360
     }
   ],
   "player": {
-    "relX": -9,
-    "yOffset": 78
+    "x": 600,
+    "y": 680
   },
   "hole": {
-    "relX": 1,
-    "y": 154
-  },
-  "savedCanvasWidth": 1920,
-  "savedCanvasHeight": 911
+    "x": 640,
+    "y": 100
+  }
 }

@@ -8,6 +8,7 @@ import { BASE_DEFAULT_MOVE_RANGE, DEFAULT_MOVE_SPEED, FALLBACK_CANVAS_HEIGHT, FA
 
 
 interface GameMenuProps {
+  showMenuUI: boolean;
   gameState: GameState;
   setGameState: React.Dispatch<React.SetStateAction<GameState>>;
   editorState: EditorState;
@@ -28,7 +29,7 @@ interface GameMenuProps {
 }
 
 const GameMenu: React.FC<GameMenuProps> = ({
-  gameState, setGameState, editorState, setEditorState, levels, setLevels, loadLevelData, saveCurrentLevelData,
+  showMenuUI, gameState, setGameState, editorState, setEditorState, levels, setLevels, loadLevelData, saveCurrentLevelData,
   showUIMessage, fileInputRef, onPointerOverUIChanged, saveHistoryState, undo, redo, createDefaultLevelData, validateAndDefaultLevel, resetBall
 }) => {
 
@@ -196,7 +197,9 @@ const GameMenu: React.FC<GameMenuProps> = ({
 
   return (
     <div 
-        className="absolute top-4 left-4 bg-white p-4 rounded-lg shadow-xl z-20 space-y-3 w-64 max-h-[calc(100vh-2rem)] overflow-y-auto transition-transform duration-300 ease-out"
+        className={`absolute top-0 left-0 h-full bg-white p-4 shadow-xl z-20 space-y-3 w-64 max-h-full overflow-y-auto transition-transform duration-300 ease-in-out ${
+            showMenuUI ? 'translate-x-0' : '-translate-x-full'
+        } md:relative md:top-4 md:left-4 md:h-auto md:max-h-[calc(100vh-2rem)] md:rounded-lg md:translate-x-0`}
         onMouseEnter={() => onPointerOverUIChanged(true)}
         onMouseLeave={() => onPointerOverUIChanged(false)}
     >

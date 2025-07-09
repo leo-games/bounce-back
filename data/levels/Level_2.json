@@ -1,106 +1,26 @@
 {
-  "name": "Level 2",
+  "name": "Level 2: The Bank Shot",
+  "savedCanvasWidth": 1280,
+  "savedCanvasHeight": 720,
   "bricks": [
     {
-      "angle": 2.334046213752837,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": 705.6,
-      "y": 1018.8016666666666,
-      "width": 240,
-      "height": 30.366666666666667,
-      "moveRange": 50,
-      "initialX": 705.6,
-      "initialY": 1018.8016666666666
-    },
-    {
-      "angle": 3.9388141864433446,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": 1197.1093529919565,
-      "y": 135.34415614596924,
-      "width": 255.43325756121934,
-      "height": 10.689556862746416,
-      "moveRange": 50,
-      "initialX": 1197.1093529919565,
-      "initialY": 135.34415614596924
-    },
-    {
-      "angle": 1.561060890288295,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": -274.83062873766056,
-      "y": 141.34921642867909,
-      "width": 383.56123841513613,
-      "height": 29.69372954155332,
-      "moveRange": 50,
-      "initialX": -274.83062873766056,
-      "initialY": 141.34921642867909
-    },
-    {
-      "angle": 2.3587619601016336,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": -496.79999999999995,
-      "y": 979.3249999999999,
-      "width": 240,
-      "height": 30.366666666666667,
-      "moveRange": 50,
-      "initialX": -496.79999999999995,
-      "initialY": 979.3249999999999
-    },
-    {
+      "x": 540,
+      "y": 360,
+      "width": 200,
+      "height": 30,
       "angle": 0,
       "isKillBrick": false,
       "movementType": null,
-      "moveSpeed": 1,
-      "x": 726,
-      "y": 239.92166666666668,
-      "width": 379.2,
-      "height": 30.366666666666667,
       "moveRange": 50,
-      "initialX": 726,
-      "initialY": 239.92166666666668
-    },
-    {
-      "angle": 2.3163628903927953,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": 1242.6822395624029,
-      "y": 597.0506214253185,
-      "width": 198.8671842363671,
-      "height": 12.013661066134754,
-      "moveRange": 50,
-      "initialX": 1242.6822395624029,
-      "initialY": 597.0506214253185
-    },
-    {
-      "angle": 2.3411088472060975,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": 611.4466930467808,
-      "y": 591.1215687132848,
-      "width": 229.7431385360091,
-      "height": 14.811361346228336,
-      "moveRange": 50,
-      "initialX": 611.4466930467808,
-      "initialY": 591.1215687132848
+      "moveSpeed": 1
     }
   ],
   "player": {
-    "x": 762.830985915493,
-    "y": 863.9164835164835
+    "x": 200,
+    "y": 680
   },
   "hole": {
-    "x": 960,
-    "y": 151.83333333333334
-  },
-  "savedCanvasWidth": 1065,
-  "savedCanvasHeight": 910
+    "x": 1080,
+    "y": 650
+  }
 }

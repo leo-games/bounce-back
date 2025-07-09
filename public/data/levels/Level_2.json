@@ -1,56 +1,26 @@
 {
-  "name": "Level 2",
-  "savedCanvasWidth": 800,
-  "savedCanvasHeight": 600,
+  "name": "Level 2: The Bank Shot",
+  "savedCanvasWidth": 1280,
+  "savedCanvasHeight": 720,
   "bricks": [
     {
-      "angle": -0.2,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": 200,
-      "y": 350,
-      "width": 150,
-      "height": 20,
-      "moveRange": 50,
-      "baseWidth": 150,
-      "baseHeight": 20
-    },
-    {
-      "angle": 0,
-      "isKillBrick": false,
-      "movementType": "horizontal",
-      "moveSpeed": 1,
-      "x": 450,
-      "y": 250,
-      "width": 100,
-      "height": 20,
-      "moveRange": 70,
-      "initialX": 450,
-      "initialY": 250,
-      "baseWidth": 100,
-      "baseHeight": 20
-    },
-    {
+      "x": 540,
+      "y": 360,
+      "width": 200,
+      "height": 30,
       "angle": 0,
       "isKillBrick": false,
       "movementType": null,
-      "moveSpeed": 1,
-      "x": 350,
-      "y": 150,
-      "width": 100,
-      "height": 20,
       "moveRange": 50,
-      "baseWidth": 100,
-      "baseHeight": 20
+      "moveSpeed": 1
     }
   ],
   "player": {
-    "x": 380,
-    "y": 540
+    "x": 200,
+    "y": 680
   },
   "hole": {
-    "x": 400,
-    "y": 100
+    "x": 1080,
+    "y": 650
   }
 }

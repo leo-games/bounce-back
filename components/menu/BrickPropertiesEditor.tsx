@@ -36,37 +36,39 @@ const BrickPropertiesEditor: React.FC<BrickPropertiesEditorProps> = ({
   };
 
   return (
-    <div className="space-y-2 border-t border-gray-200 pt-3 mt-3">
-      <h4 className="text-sm font-medium text-center text-gray-700">Brick Properties</h4>
-      <div>
-        <label htmlFor="propMoveRange" className="block mb-1 text-xs text-gray-600">Move Range:</label>
-        <input
-          type="number"
-          id="propMoveRange"
-          name="moveRange"
-          min="0"
-          step="1"
-          value={isMover ? (brick.moveRange ?? 0).toFixed(1) : ''}
-          onChange={handleInputChange}
-          disabled={!isMover || editorState.isUpdatingPropertiesFromInput}
-          placeholder={isMover ? '' : 'N/A (Static)'}
-          className="w-full px-2 py-1 border border-gray-300 rounded-sm text-xs disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
-        />
-      </div>
-      <div>
-        <label htmlFor="propMoveSpeed" className="block mb-1 text-xs text-gray-600">Move Speed:</label>
-        <input
-          type="number"
-          id="propMoveSpeed"
-          name="moveSpeed"
-          min="0"
-          step="0.1"
-          value={isMover ? (brick.moveSpeed ?? DEFAULT_MOVE_SPEED).toFixed(1) : ''}
-          onChange={handleInputChange}
-          disabled={!isMover || editorState.isUpdatingPropertiesFromInput}
-          placeholder={isMover ? '' : 'N/A (Static)'}
-          className="w-full px-2 py-1 border border-gray-300 rounded-sm text-xs disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
-        />
+    <div className="space-y-3 border-t border-gray-200 pt-3 mt-3">
+      <h4 className="text-base font-medium text-center text-gray-700 md:text-sm">Brick Properties</h4>
+      <div className="space-y-2">
+        <div>
+          <label htmlFor="propMoveRange" className="block mb-1 text-sm text-gray-600 md:text-xs">Move Range:</label>
+          <input
+            type="number"
+            id="propMoveRange"
+            name="moveRange"
+            min="0"
+            step="1"
+            value={isMover ? (brick.moveRange ?? 0).toFixed(1) : ''}
+            onChange={handleInputChange}
+            disabled={!isMover || editorState.isUpdatingPropertiesFromInput}
+            placeholder={isMover ? '' : 'N/A (Static)'}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-base md:text-xs disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
+          />
+        </div>
+        <div>
+          <label htmlFor="propMoveSpeed" className="block mb-1 text-sm text-gray-600 md:text-xs">Move Speed:</label>
+          <input
+            type="number"
+            id="propMoveSpeed"
+            name="moveSpeed"
+            min="0"
+            step="0.1"
+            value={isMover ? (brick.moveSpeed ?? DEFAULT_MOVE_SPEED).toFixed(1) : ''}
+            onChange={handleInputChange}
+            disabled={!isMover || editorState.isUpdatingPropertiesFromInput}
+            placeholder={isMover ? '' : 'N/A (Static)'}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-base md:text-xs disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
+          />
+        </div>
       </div>
     </div>
   );

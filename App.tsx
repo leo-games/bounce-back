@@ -215,136 +215,118 @@ const App: React.FC = () => {
   }, []);
 
   const loadLevelData = useCallback((levelIndex: number, currentLevels: LevelData[], canvasWidthParam: number, canvasHeightParam: number) => {
-    console.log(`[LoadLevelData] Attempting to load level index: ${levelIndex}. Canvas: ${canvasWidthParam}x${canvasHeightParam}`);
-    const actualCanvasWidth = Math.max(1, canvasWidthParam); 
+    const actualCanvasWidth = Math.max(1, canvasWidthParam);
     const actualCanvasHeight = Math.max(1, canvasHeightParam);
 
     if (levelIndex < 0 || levelIndex >= currentLevels.length) {
-        console.error(`[LoadLevelData] Invalid level index: ${levelIndex}. Max index: ${currentLevels.length - 1}.`);
         levelIndex = 0;
         if (currentLevels.length === 0) {
-            console.warn("[LoadLevelData] No levels exist, creating default level 0.");
-            currentLevels.push(createDefaultLevelData(0)); 
+            currentLevels.push(createDefaultLevelData(0));
         }
     }
+    
     const levelData = currentLevels[levelIndex];
     if (!levelData || !levelData.bricks || !levelData.player || !levelData.hole) {
         showUIMessage(`Error: Corrupted data for Level ${levelIndex + 1}. Loading fallback.`, 3000);
-        console.error(`[LoadLevelData] Corrupted level data structure for index ${levelIndex}:`, levelData);
-        currentLevels[levelIndex] = validateAndDefaultLevel({}, levelIndex); // Force full default
-        // Recursive call to ensure state is set based on the new (fallback) data
-        // Note: This structure assumes setGameState happens outside or after this recursive call resolves if it were to return data
-        loadLevelData(levelIndex, currentLevels, actualCanvasWidth, actualCanvasHeight); 
-        return; 
-    }
-    console.log(`[LoadLevelData] Loading validated level: "${levelData.name}". Saved Dims: ${levelData.savedCanvasWidth}x${levelData.savedCanvasHeight}`);
-    console.log(`[LoadLevelData] Player original (rel to saved): x=${levelData.player.x}, y=${levelData.player.y}`);
-    console.log(`[LoadLevelData] Hole original (rel to saved): x=${levelData.hole.x}, y=${levelData.hole.y}`);
-
-
-    const positionReferenceWidth = levelData.savedCanvasWidth || FALLBACK_CANVAS_WIDTH;
-    const positionReferenceHeight = levelData.savedCanvasHeight || FALLBACK_CANVAS_HEIGHT;
-    const positionScaleX = actualCanvasWidth / positionReferenceWidth;
-    const positionScaleY = actualCanvasHeight / positionReferenceHeight;
-
-    if (Math.abs(positionScaleX) > 10 || (Math.abs(positionScaleX) < 0.1 && positionScaleX !== 0) || 
-        Math.abs(positionScaleY) > 10 || (Math.abs(positionScaleY) < 0.1 && positionScaleY !== 0)) {
-        console.warn(`[LoadLevelData] Extreme positionScale factors: X=${positionScaleX.toFixed(3)}, Y=${positionScaleY.toFixed(3)}. Canvas: ${actualCanvasWidth}x${actualCanvasHeight}, Ref: ${positionReferenceWidth}x${positionReferenceHeight}`);
+        currentLevels[levelIndex] = validateAndDefaultLevel({}, levelIndex);
+        loadLevelData(levelIndex, currentLevels, actualCanvasWidth, actualCanvasHeight);
+        return;
     }
 
+    setGameState(prevGameState => {
+        const positionReferenceWidth = levelData.savedCanvasWidth || FALLBACK_CANVAS_WIDTH;
+        const positionReferenceHeight = levelData.savedCanvasHeight || FALLBACK_CANVAS_HEIGHT;
+        const positionScaleX = actualCanvasWidth / positionReferenceWidth;
+        const positionScaleY = actualCanvasHeight / positionReferenceHeight;
 
-    const sizeReferenceWidth = FALLBACK_CANVAS_WIDTH;
-    const sizeReferenceHeight = FALLBACK_CANVAS_HEIGHT;
-    const sizeScaleX = actualCanvasWidth / sizeReferenceWidth;
-    const sizeScaleY = actualCanvasHeight / sizeReferenceHeight;
-    const sizeScaleMin = Math.min(sizeScaleX, sizeScaleY);
+        const sizeReferenceWidth = FALLBACK_CANVAS_WIDTH;
+        const sizeReferenceHeight = FALLBACK_CANVAS_HEIGHT;
+        const sizeScaleX = actualCanvasWidth / sizeReferenceWidth;
+        const sizeScaleY = actualCanvasHeight / sizeReferenceHeight;
+        const sizeScaleMin = Math.min(sizeScaleX, sizeScaleY);
 
-    const newGameState: GameState = {
-        ...gameState, 
-        currentLevelIndex: levelIndex,
-        lastSizeScaleX: sizeScaleX,
-        lastSizeScaleY: sizeScaleY,
-        lastSizeScaleMin: sizeScaleMin,
-        scaledPlayerBottomOffset: BASE_PLAYER_DEFAULT_BOTTOM_OFFSET * sizeScaleY,
-        scaledMinBrickDimension: BASE_MIN_BRICK_DIMENSION * sizeScaleMin,
-        scaledHandleSize: BASE_HANDLE_SIZE * sizeScaleMin,
-        scaledRotateHandleOffset: BASE_ROTATE_HANDLE_OFFSET * sizeScaleMin,
-        scaledAimLineLength: BASE_AIM_LINE_LENGTH * sizeScaleMin,
-        scaledBallOutlineWidth: BASE_BALL_OUTLINE_WIDTH * sizeScaleMin, 
-        
-        player: {
-            x: (levelData.player.x || positionReferenceWidth / 2) * positionScaleX,
-            y: (levelData.player.y || positionReferenceHeight - BASE_PLAYER_DEFAULT_BOTTOM_OFFSET) * positionScaleY,
-            width: BASE_PLAYER_WIDTH * sizeScaleX,
-            height: BASE_PLAYER_HEIGHT * sizeScaleY,
-            headRadius: BASE_PLAYER_HEAD_RADIUS * sizeScaleMin,
-        },
-        hole: {
-            x: (levelData.hole.x || positionReferenceWidth / 2) * positionScaleX,
-            y: (levelData.hole.y || BASE_HOLE_DEFAULT_Y) * positionScaleY,
-            radius: BASE_HOLE_RADIUS * sizeScaleMin,
-        },
-        ball: {
-            ...(gameState.ball), 
-            radius: BASE_BALL_RADIUS * sizeScaleMin,
-            vx: 0, vy: 0, fired: false, onPlayer: true, 
-            x:0, y:0 
-        },
-        bricks: levelData.bricks.map(brickData => {
-            const unscaledX = brickData.x;
-            const unscaledY = brickData.y;
-            const unscaledWidth = brickData.baseWidth ?? brickData.width; 
-            const unscaledHeight = brickData.baseHeight ?? brickData.height;
-            const unscaledInitialX = brickData.initialX !== undefined ? brickData.initialX : unscaledX;
-            const unscaledInitialY = brickData.initialY !== undefined ? brickData.initialY : unscaledY;
-            const unscaledMoveRange = brickData.moveRange;
+        const newGameState: GameState = {
+            ...prevGameState,
+            currentLevelIndex: levelIndex,
+            lastSizeScaleX: sizeScaleX,
+            lastSizeScaleY: sizeScaleY,
+            lastSizeScaleMin: sizeScaleMin,
+            scaledPlayerBottomOffset: BASE_PLAYER_DEFAULT_BOTTOM_OFFSET * sizeScaleY,
+            scaledMinBrickDimension: BASE_MIN_BRICK_DIMENSION * sizeScaleMin,
+            scaledHandleSize: BASE_HANDLE_SIZE * sizeScaleMin,
+            scaledRotateHandleOffset: BASE_ROTATE_HANDLE_OFFSET * sizeScaleMin,
+            scaledAimLineLength: BASE_AIM_LINE_LENGTH * sizeScaleMin,
+            scaledBallOutlineWidth: BASE_BALL_OUTLINE_WIDTH * sizeScaleMin,
+            player: {
+                x: (levelData.player.x || positionReferenceWidth / 2) * positionScaleX,
+                y: (levelData.player.y || positionReferenceHeight - BASE_PLAYER_DEFAULT_BOTTOM_OFFSET) * positionScaleY,
+                width: BASE_PLAYER_WIDTH * sizeScaleX,
+                height: BASE_PLAYER_HEIGHT * sizeScaleY,
+                headRadius: BASE_PLAYER_HEAD_RADIUS * sizeScaleMin,
+            },
+            hole: {
+                x: (levelData.hole.x || positionReferenceWidth / 2) * positionScaleX,
+                y: (levelData.hole.y || BASE_HOLE_DEFAULT_Y) * positionScaleY,
+                radius: BASE_HOLE_RADIUS * sizeScaleMin,
+            },
+            ball: {
+                ...prevGameState.ball,
+                radius: BASE_BALL_RADIUS * sizeScaleMin,
+                vx: 0, vy: 0, fired: false, onPlayer: true,
+                x: 0, y: 0
+            },
+            bricks: levelData.bricks.map(brickData => {
+                const unscaledX = brickData.x;
+                const unscaledY = brickData.y;
+                const unscaledWidth = brickData.baseWidth ?? brickData.width;
+                const unscaledHeight = brickData.baseHeight ?? brickData.height;
+                const unscaledInitialX = brickData.initialX !== undefined ? brickData.initialX : unscaledX;
+                const unscaledInitialY = brickData.initialY !== undefined ? brickData.initialY : unscaledY;
+                const unscaledMoveRange = brickData.moveRange;
 
-            const scaledX = unscaledX * positionScaleX;
-            const scaledY = unscaledY * positionScaleY;
-            const scaledInitialX = unscaledInitialX * positionScaleX;
-            const scaledInitialY = unscaledInitialY * positionScaleY;
+                const scaledX = unscaledX * positionScaleX;
+                const scaledY = unscaledY * positionScaleY;
+                const scaledInitialX = unscaledInitialX * positionScaleX;
+                const scaledInitialY = unscaledInitialY * positionScaleY;
 
-            const scaledWidth = Math.max(BASE_MIN_BRICK_DIMENSION * sizeScaleMin, unscaledWidth * sizeScaleX);
-            const scaledHeight = Math.max(BASE_MIN_BRICK_DIMENSION * sizeScaleMin, unscaledHeight * sizeScaleY);
-            
-            let scaledMoveRange = unscaledMoveRange;
-            if (brickData.movementType === BrickMovementType.Horizontal) {
-                scaledMoveRange *= sizeScaleX;
-            } else if (brickData.movementType === BrickMovementType.Vertical) {
-                scaledMoveRange *= sizeScaleY;
-            }
+                const scaledWidth = Math.max(BASE_MIN_BRICK_DIMENSION * sizeScaleMin, unscaledWidth * sizeScaleX);
+                const scaledHeight = Math.max(BASE_MIN_BRICK_DIMENSION * sizeScaleMin, unscaledHeight * sizeScaleY);
 
-            return {
-                ...brickData,
-                x: scaledX, y: scaledY,
-                width: scaledWidth, height: scaledHeight,
-                initialX: scaledInitialX, initialY: scaledInitialY,
-                moveRange: scaledMoveRange,
-                baseWidth: unscaledWidth, 
-                baseHeight: unscaledHeight,
-            };
-        }),
-    };
-    
-    console.log(`[LoadLevelData] Player scaled: x=${newGameState.player.x.toFixed(2)}, y=${newGameState.player.y.toFixed(2)}`);
-    console.log(`[LoadLevelData] Hole scaled: x=${newGameState.hole.x.toFixed(2)}, y=${newGameState.hole.y.toFixed(2)}`);
-    
-    const ballResetState = resetBall(newGameState);
-    newGameState.ball = {...newGameState.ball, ...ballResetState.ball };
+                let scaledMoveRange = unscaledMoveRange;
+                if (brickData.movementType === BrickMovementType.Horizontal) {
+                    scaledMoveRange *= sizeScaleX;
+                } else if (brickData.movementType === BrickMovementType.Vertical) {
+                    scaledMoveRange *= sizeScaleY;
+                }
 
-    setGameState(newGameState); 
-    
-    setEditorState(prev => ({ 
-      ...prev,
-      selectedItems: [],
-      draggingHandle: null,
-      isDraggingSelection: false,
-      isMarqueeSelecting: false,
-      originalItemStates: [],
-      contextMenu: null, 
+                return {
+                    ...brickData,
+                    x: scaledX, y: scaledY,
+                    width: scaledWidth, height: scaledHeight,
+                    initialX: scaledInitialX, initialY: scaledInitialY,
+                    moveRange: scaledMoveRange,
+                    baseWidth: unscaledWidth,
+                    baseHeight: unscaledHeight,
+                };
+            }),
+        };
+
+        const ballResetState = resetBall(newGameState);
+        newGameState.ball = { ...newGameState.ball, ...ballResetState.ball };
+
+        return newGameState;
+    });
+
+    setEditorState(prev => ({
+        ...prev,
+        selectedItems: [],
+        draggingHandle: null,
+        isDraggingSelection: false,
+        isMarqueeSelecting: false,
+        originalItemStates: [],
+        contextMenu: null,
     }));
-    console.log("[LoadLevelData] Level loading complete.");
-  }, [gameState, createDefaultLevelData, validateAndDefaultLevel, resetBall, showUIMessage ]);
+  }, [createDefaultLevelData, validateAndDefaultLevel, resetBall, showUIMessage]);
 
 
   const saveLevelsToStorage = useCallback((currentLevels: LevelData[]) => {
@@ -361,74 +343,6 @@ const App: React.FC = () => {
       showUIMessage("Error saving levels. Storage might be full.", 3000);
     }
   }, [showUIMessage]);
-
-  const loadLevelsFromStorage = useCallback(async () => {
-    let loadedLevels: LevelData[] = [];
-    const storedLevels = localStorage.getItem(LOCAL_STORAGE_LEVELS_KEY);
-    let loadedFromStorage = false;
-
-    if (storedLevels) {
-        try {
-            const parsedLevels = JSON.parse(storedLevels) as Partial<LevelData>[];
-            if (Array.isArray(parsedLevels) && parsedLevels.length > 0 && parsedLevels[0]?.bricks && parsedLevels[0]?.player && parsedLevels[0]?.hole && parsedLevels[0]?.savedCanvasWidth) {
-                loadedLevels = parsedLevels.map((lvl, index) => validateAndDefaultLevel(lvl, index));
-                loadedFromStorage = true;
-                console.log("[App] Loaded levels from localStorage.");
-            } else {
-                 console.warn("[App] Invalid level structure in localStorage. Will fetch defaults.");
-            }
-        } catch (e) { 
-            console.error("Failed to parse levels from localStorage:", e);
-            showUIMessage("Error loading saved levels. Using defaults.", 3000);
-        }
-    }
-
-    if (!loadedFromStorage) {
-        console.log("[App] No valid levels in localStorage or parse error, fetching default levels...");
-        try {
-            const responses = await Promise.all(DEFAULT_LEVEL_FILES.map(url => fetch(url)));
-            const fetchedLevelDataPromises = responses.map(async (res, idx) => {
-                if (!res.ok) {
-                    console.warn(`Failed to fetch default level: ${DEFAULT_LEVEL_FILES[idx]} (${res.statusText}). Using fallback.`);
-                    return createDefaultLevelData(idx); 
-                }
-                try {
-                    const jsonData = await res.json();
-                    return validateAndDefaultLevel(jsonData, idx);
-                } catch (e) {
-                    console.warn(`Failed to parse JSON for ${DEFAULT_LEVEL_FILES[idx]}. Using fallback.`, e);
-                    return createDefaultLevelData(idx);
-                }
-            });
-            loadedLevels = await Promise.all(fetchedLevelDataPromises);
-            if (loadedLevels.length > 0) {
-                console.log(`[App] Successfully fetched and validated ${loadedLevels.length} default levels.`);
-                saveLevelsToStorage(loadedLevels);
-            } else {
-                throw new Error("Fetched default level data was empty or all failed.");
-            }
-        } catch (fetchError) {
-            console.error("Failed to fetch or process default levels:", fetchError);
-            showUIMessage("Could not load default levels. Using fallback.", 3000);
-            loadedLevels = [createDefaultLevelData(0)];
-        }
-    }
-    
-    if (loadedLevels.length === 0) {
-        console.warn("[App] Level loading resulted in empty array, creating one fallback level.");
-        loadedLevels = [createDefaultLevelData(0)];
-    }
-    setLevels(loadedLevels);
-
-    // Initial loadLevelData is deferred to an effect after gameStarted=true and canvas is ready.
-    // This ensures dimensions are available.
-    if (gameStarted && canvasRef.current && canvasContainerRef.current && loadedLevels.length > 0) {
-        console.log("[App loadLevelsFromStorage] Game already started, attempting to load level 0 data.");
-        loadLevelData(0, loadedLevels, canvasContainerRef.current.offsetWidth, canvasContainerRef.current.offsetHeight);
-    } else {
-         console.log("[App loadLevelsFromStorage] Levels loaded. Game not started or canvas not ready for immediate level data load.");
-    }
-  }, [validateAndDefaultLevel, createDefaultLevelData, saveLevelsToStorage, showUIMessage, loadLevelData, gameStarted]); // Added gameStarted
 
 
   // --- History Management ---
@@ -622,11 +536,67 @@ const App: React.FC = () => {
 
   // --- Initial Load and Resize ---
   useEffect(() => {
-    const initLoad = async () => {
-      await loadLevelsFromStorage();
+    const fetchLevels = async () => {
+      console.log("[App] Fetching level data...");
+      let loadedLevels: LevelData[] = [];
+      const storedLevels = localStorage.getItem(LOCAL_STORAGE_LEVELS_KEY);
+      let loadedFromStorage = false;
+
+      if (storedLevels) {
+          try {
+              const parsedLevels = JSON.parse(storedLevels) as Partial<LevelData>[];
+              if (Array.isArray(parsedLevels) && parsedLevels.length > 0 && parsedLevels[0]?.bricks && parsedLevels[0]?.player && parsedLevels[0]?.hole && parsedLevels[0]?.savedCanvasWidth) {
+                  loadedLevels = parsedLevels.map((lvl, index) => validateAndDefaultLevel(lvl, index));
+                  loadedFromStorage = true;
+                  console.log("[App] Successfully loaded levels from localStorage.");
+              } else {
+                   console.warn("[App] Invalid level structure in localStorage. Fetching defaults.");
+              }
+          } catch (e) { 
+              console.error("Failed to parse levels from localStorage:", e);
+          }
+      }
+
+      if (!loadedFromStorage) {
+          console.log("[App] No valid levels in localStorage, fetching default levels...");
+          try {
+              const responses = await Promise.all(DEFAULT_LEVEL_FILES.map(url => fetch(url)));
+              const fetchedLevelDataPromises = responses.map(async (res, idx) => {
+                  if (!res.ok) {
+                      console.warn(`Failed to fetch default level: ${DEFAULT_LEVEL_FILES[idx]} (${res.statusText}). Using fallback.`);
+                      return createDefaultLevelData(idx); 
+                  }
+                  try {
+                      const jsonData = await res.json();
+                      return validateAndDefaultLevel(jsonData, idx);
+                  } catch (e) {
+                      console.warn(`Failed to parse JSON for ${DEFAULT_LEVEL_FILES[idx]}. Using fallback.`, e);
+                      return createDefaultLevelData(idx);
+                  }
+              });
+              loadedLevels = await Promise.all(fetchedLevelDataPromises);
+              if (loadedLevels.length > 0) {
+                  console.log(`[App] Successfully fetched and validated ${loadedLevels.length} default levels.`);
+                  saveLevelsToStorage(loadedLevels);
+              } else {
+                  throw new Error("Fetched default level data was empty or all failed.");
+              }
+          } catch (fetchError) {
+              console.error("Failed to fetch or process default levels:", fetchError);
+              showUIMessage("Could not load default levels. Using fallback.", 3000);
+              loadedLevels = [createDefaultLevelData(0)];
+          }
+      }
+      
+      if (loadedLevels.length === 0) {
+          console.warn("[App] Level loading resulted in empty array, creating one fallback level.");
+          loadedLevels = [createDefaultLevelData(0)];
+      }
+      setLevels(loadedLevels);
     };
-    initLoad();
-  }, []); 
+    
+    fetchLevels();
+  }, [createDefaultLevelData, saveLevelsToStorage, showUIMessage, validateAndDefaultLevel]); 
 
   const handleResize = useCallback(() => {
     requestAnimationFrame(() => { // Defer to next animation frame
@@ -636,13 +606,10 @@ const App: React.FC = () => {
             const newHeight = container.offsetHeight;
             
             if (canvasRef.current.width !== newWidth || canvasRef.current.height !== newHeight) {
-                console.log(`[HandleResize] Canvas resize detected. New: ${newWidth}x${newHeight}, Old: ${canvasRef.current.width}x${canvasRef.current.height}`);
                 canvasRef.current.width = newWidth;
                 canvasRef.current.height = newHeight;
                 if (levels.length > 0 && gameStarted) { 
                     loadLevelData(gameState.currentLevelIndex, levels, newWidth, newHeight);
-                } else {
-                    console.log("[HandleResize] Conditions not met for loadLevelData (levels empty or game not started).");
                 }
             }
         }
@@ -650,10 +617,7 @@ const App: React.FC = () => {
   }, [levels, gameState.currentLevelIndex, gameStarted, loadLevelData]); 
 
   useEffect(() => {
-    // This effect calls handleResize once when the game starts and levels are available.
-    // handleResize itself now uses requestAnimationFrame.
     if (gameStarted && levels.length > 0) {
-        console.log("[App gameStarted/levels Effect] Game started and levels available. Calling initial handleResize.");
         handleResize(); 
     }
   }, [gameStarted, levels, handleResize]);
@@ -665,12 +629,20 @@ const App: React.FC = () => {
   }, [handleResize]);
 
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const handleStartGame = useCallback(() => {
     setGameStarted(true);
-    setShowMenuUI(true); 
-    // Initial loadLevelData is now handled by the useEffect listening to [gameStarted, levels, handleResize]
-    // to ensure canvas dimensions from canvasContainerRef are more stable.
-  }, []); 
+    setShowMenuUI(!isMobile); // Show menu by default on desktop, hide on mobile
+  }, [isMobile]); 
 
   const toggleGameMenu = useCallback(() => {
     setShowMenuUI(prev => !prev);
@@ -686,179 +658,190 @@ const App: React.FC = () => {
   }
   
   return (
-    <div className="w-full h-full flex relative bg-gray-800">
-      {showMenuUI && (
-        <GameMenu
-          gameState={gameState}
-          setGameState={setGameState} 
-          editorState={editorState}
-          setEditorState={setEditorState} 
-          levels={levels}
-          setLevels={setLevels} 
-          loadLevelData={(idx) => {
-            if (canvasRef.current && canvasContainerRef.current) {
-                loadLevelData(idx, levels, canvasContainerRef.current.offsetWidth, canvasContainerRef.current.offsetHeight);
-            } else {
-                console.warn("[GameMenu loadLevelData] Canvas or container not ready.");
-            }
-          }}
-          saveCurrentLevelData={() => {
-             if (!canvasRef.current || !canvasContainerRef.current) {
-                 showUIMessage("Canvas not ready for saving.", 2000);
-                 return;
-             }
-             const currentCanvasWidth = canvasRef.current.width;
-             const currentCanvasHeight = canvasRef.current.height;
-             const index = gameState.currentLevelIndex;
-
-             if (index < 0 || index >= levels.length) {
-                 showUIMessage("Invalid level index for saving.", 2000);
-                 return;
-             }
-
-             const updatedLevelData = deepClone(levels[index]);
-             updatedLevelData.savedCanvasWidth = FALLBACK_CANVAS_WIDTH; 
-             updatedLevelData.savedCanvasHeight = FALLBACK_CANVAS_HEIGHT;
-             
-             const toFallbackScaleX = currentCanvasWidth > 0 ? FALLBACK_CANVAS_WIDTH / currentCanvasWidth : 1;
-             const toFallbackScaleY = currentCanvasHeight > 0 ? FALLBACK_CANVAS_HEIGHT / currentCanvasHeight : 1;
-
-             updatedLevelData.bricks = gameState.bricks.map(brick => {
-                const unscaledWidth = brick.baseWidth ?? (brick.width / (gameState.lastSizeScaleX || 1));
-                const unscaledHeight = brick.baseHeight ?? (brick.height / (gameState.lastSizeScaleY || 1));
-                
-                let unscaledMoveRange = brick.moveRange;
-                const lastValidSizeScaleX = gameState.lastSizeScaleX || 1;
-                const lastValidSizeScaleY = gameState.lastSizeScaleY || 1;
-
-                if (brick.movementType === BrickMovementType.Horizontal && lastValidSizeScaleX !== 0) {
-                    unscaledMoveRange /= lastValidSizeScaleX;
-                } else if (brick.movementType === BrickMovementType.Vertical && lastValidSizeScaleY !== 0) {
-                    unscaledMoveRange /= lastValidSizeScaleY;
-                }
-                
-                const currentBrickX = brick.initialX ?? brick.x;
-                const currentBrickY = brick.initialY ?? brick.y;
-
-                return {
-                    ...brick, 
-                    x: currentBrickX * toFallbackScaleX,
-                    y: currentBrickY * toFallbackScaleY,
-                    width: unscaledWidth, 
-                    height: unscaledHeight, 
-                    moveRange: unscaledMoveRange,
-                    baseWidth: unscaledWidth, 
-                    baseHeight: unscaledHeight,
-                    initialX: brick.initialX !== undefined ? (brick.initialX * toFallbackScaleX) : undefined,
-                    initialY: brick.initialY !== undefined ? (brick.initialY * toFallbackScaleY) : undefined,
-                };
-             });
-             updatedLevelData.player = { 
-                x: gameState.player.x * toFallbackScaleX, 
-                y: gameState.player.y * toFallbackScaleY
-             };
-             updatedLevelData.hole = { 
-                x: gameState.hole.x * toFallbackScaleX, 
-                y: gameState.hole.y * toFallbackScaleY
-            };
-             
-             const newLevels = [...levels];
-             newLevels[index] = updatedLevelData;
-             setLevels(newLevels);
-             saveLevelsToStorage(newLevels);
-             showUIMessage(`Level ${index + 1} ('${updatedLevelData.name}') saved!`, 1500);
-          }}
-          showUIMessage={showUIMessage}
-          fileInputRef={fileInputRef}
-          onPointerOverUIChanged={onPointerOverUIChanged}
-          saveHistoryState={(force?: boolean) => saveHistoryState(force, gameState, editorState)}
-          undo={() => {
-            if (gameState.mode !== 'editor' || editorState.historyIndex <= 0) return;
-            const newHistoryIndex = editorState.historyIndex - 1;
-            const stateToLoad = editorState.history[newHistoryIndex];
-            if (stateToLoad) {
-                const restoredGameState: GameState = { // Add explicit type here
-                    ...gameState, 
-                    ...stateToLoad 
-                };
-                const ballAfterPlayerRestore = {
-                    ...restoredGameState.ball, 
-                    radius: BASE_BALL_RADIUS * restoredGameState.lastSizeScaleMin, 
-                };
-                const tempGameStateForBallReset = {...restoredGameState, ball: ballAfterPlayerRestore};
-                const ballResetData = resetBall(tempGameStateForBallReset); 
-
-                setGameState({
-                    ...restoredGameState,
-                    ball: { ...ballAfterPlayerRestore, ...ballResetData.ball } 
-                });
-                setEditorState(prevES => ({...prevES, historyIndex: newHistoryIndex, selectedItems: [], contextMenu: null}));
-            }
-          }}
-          redo={() => {
-            if (gameState.mode !== 'editor' || editorState.historyIndex >= editorState.history.length - 1) return;
-            const newHistoryIndex = editorState.historyIndex + 1;
-            const stateToLoad = editorState.history[newHistoryIndex];
-             if (stateToLoad) {
-                const restoredGameState: GameState = { // Add explicit type here
-                    ...gameState,
-                    ...stateToLoad
-                };
-                const ballAfterPlayerRestore = {
-                    ...restoredGameState.ball,
-                    radius: BASE_BALL_RADIUS * restoredGameState.lastSizeScaleMin,
-                };
-                const tempGameStateForBallReset = {...restoredGameState, ball: ballAfterPlayerRestore};
-                const ballResetData = resetBall(tempGameStateForBallReset);
-
-                setGameState({
-                     ...restoredGameState,
-                     ball: { ...ballAfterPlayerRestore, ...ballResetData.ball }
-                });
-                setEditorState(prevES => ({...prevES, historyIndex: newHistoryIndex, selectedItems: [], contextMenu: null}));
-            }
-          }}
-          createDefaultLevelData={createDefaultLevelData}
-          validateAndDefaultLevel={validateAndDefaultLevel}
-          resetBall={(currentGS: GameState) => setGameState(prev => ({...prev, ...resetBall(currentGS)}))}
-        />
+    <div className="w-full h-full flex relative bg-gray-800 md:flex-row flex-col">
+      {/* Overlay for mobile */}
+      {isMobile && showMenuUI && (
+        <div 
+          className="absolute inset-0 bg-black bg-opacity-50 z-10"
+          onClick={toggleGameMenu}
+        ></div>
       )}
-      <button 
-        onClick={toggleGameMenu} 
-        className={`absolute top-4 ${showMenuUI ? 'left-[17rem]' : 'left-4'} z-30 bg-gray-600 text-white p-2 rounded-md hover:bg-gray-700 transition-all duration-150 ease-in-out`}
-        title={showMenuUI ? "Hide Menu" : "Show Menu"}
-      >
-        {showMenuUI ? (
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-        ) : (
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
-        )}
-      </button>
       
-      <div ref={canvasContainerRef} className="flex-grow h-full relative">
-        <GameCanvas 
-            canvasRef={canvasRef}
-            gameState={gameState}
-            setGameState={setGameState}
-            editorState={editorState}
-            setEditorState={setEditorState}
-            showUIMessage={showUIMessage}
-            resetBall={(currentGS) => setGameState(prev => ({...prev, ...resetBall(currentGS)}))}
-            saveHistoryState={() => saveHistoryState(false, gameState, editorState)} 
-            isPointerOverUIRef={isPointerOverUIRef}
-         />
-        {editorState.contextMenu && (
-          <ContextMenuComponent
-            contextMenuState={editorState.contextMenu}
-            gameState={gameState}
-            setGameState={setGameState}
-            editorState={editorState}
-            setEditorState={setEditorState}
-            saveHistory={() => saveHistoryState(false, gameState, editorState)}
-            showUIMessage={showUIMessage}
+      <GameMenu
+        showMenuUI={showMenuUI}
+        gameState={gameState}
+        setGameState={setGameState} 
+        editorState={editorState}
+        setEditorState={setEditorState} 
+        levels={levels}
+        setLevels={setLevels} 
+        loadLevelData={(idx) => {
+          if (canvasRef.current && canvasContainerRef.current) {
+              loadLevelData(idx, levels, canvasContainerRef.current.offsetWidth, canvasContainerRef.current.offsetHeight);
+              if (isMobile) setShowMenuUI(false); // Close menu on level selection on mobile
+          } else {
+              console.warn("[GameMenu loadLevelData] Canvas or container not ready.");
+          }
+        }}
+        saveCurrentLevelData={() => {
+            if (!canvasRef.current || !canvasContainerRef.current) {
+                showUIMessage("Canvas not ready for saving.", 2000);
+                return;
+            }
+            const currentCanvasWidth = canvasRef.current.width;
+            const currentCanvasHeight = canvasRef.current.height;
+            const index = gameState.currentLevelIndex;
+
+            if (index < 0 || index >= levels.length) {
+                showUIMessage("Invalid level index for saving.", 2000);
+                return;
+            }
+
+            const updatedLevelData = deepClone(levels[index]);
+            updatedLevelData.savedCanvasWidth = FALLBACK_CANVAS_WIDTH; 
+            updatedLevelData.savedCanvasHeight = FALLBACK_CANVAS_HEIGHT;
+            
+            const toFallbackScaleX = currentCanvasWidth > 0 ? FALLBACK_CANVAS_WIDTH / currentCanvasWidth : 1;
+            const toFallbackScaleY = currentCanvasHeight > 0 ? FALLBACK_CANVAS_HEIGHT / currentCanvasHeight : 1;
+
+            updatedLevelData.bricks = gameState.bricks.map(brick => {
+              const unscaledWidth = brick.baseWidth ?? (brick.width / (gameState.lastSizeScaleX || 1));
+              const unscaledHeight = brick.baseHeight ?? (brick.height / (gameState.lastSizeScaleY || 1));
+              
+              let unscaledMoveRange = brick.moveRange;
+              const lastValidSizeScaleX = gameState.lastSizeScaleX || 1;
+              const lastValidSizeScaleY = gameState.lastSizeScaleY || 1;
+
+              if (brick.movementType === BrickMovementType.Horizontal && lastValidSizeScaleX !== 0) {
+                  unscaledMoveRange /= lastValidSizeScaleX;
+              } else if (brick.movementType === BrickMovementType.Vertical && lastValidSizeScaleY !== 0) {
+                  unscaledMoveRange /= lastValidSizeScaleY;
+              }
+              
+              const currentBrickX = brick.initialX ?? brick.x;
+              const currentBrickY = brick.initialY ?? brick.y;
+
+              return {
+                  ...brick, 
+                  x: currentBrickX * toFallbackScaleX,
+                  y: currentBrickY * toFallbackScaleY,
+                  width: unscaledWidth, 
+                  height: unscaledHeight, 
+                  moveRange: unscaledMoveRange,
+                  baseWidth: unscaledWidth, 
+                  baseHeight: unscaledHeight,
+                  initialX: brick.initialX !== undefined ? (brick.initialX * toFallbackScaleX) : undefined,
+                  initialY: brick.initialY !== undefined ? (brick.initialY * toFallbackScaleY) : undefined,
+              };
+            });
+            updatedLevelData.player = { 
+              x: gameState.player.x * toFallbackScaleX, 
+              y: gameState.player.y * toFallbackScaleY
+            };
+            updatedLevelData.hole = { 
+              x: gameState.hole.x * toFallbackScaleX, 
+              y: gameState.hole.y * toFallbackScaleY
+          };
+            
+            const newLevels = [...levels];
+            newLevels[index] = updatedLevelData;
+            setLevels(newLevels);
+            saveLevelsToStorage(newLevels);
+            showUIMessage(`Level ${index + 1} ('${updatedLevelData.name}') saved!`, 1500);
+        }}
+        showUIMessage={showUIMessage}
+        fileInputRef={fileInputRef}
+        onPointerOverUIChanged={onPointerOverUIChanged}
+        saveHistoryState={(force?: boolean) => saveHistoryState(force, gameState, editorState)}
+        undo={() => {
+          if (gameState.mode !== 'editor' || editorState.historyIndex <= 0) return;
+          const newHistoryIndex = editorState.historyIndex - 1;
+          const stateToLoad = editorState.history[newHistoryIndex];
+          if (stateToLoad) {
+              const restoredGameState: GameState = { // Add explicit type here
+                  ...gameState, 
+                  ...stateToLoad 
+              };
+              const ballAfterPlayerRestore = {
+                  ...restoredGameState.ball, 
+                  radius: BASE_BALL_RADIUS * restoredGameState.lastSizeScaleMin, 
+              };
+              const tempGameStateForBallReset = {...restoredGameState, ball: ballAfterPlayerRestore};
+              const ballResetData = resetBall(tempGameStateForBallReset); 
+
+              setGameState({
+                  ...restoredGameState,
+                  ball: { ...ballAfterPlayerRestore, ...ballResetData.ball } 
+              });
+              setEditorState(prevES => ({...prevES, historyIndex: newHistoryIndex, selectedItems: [], contextMenu: null}));
+          }
+        }}
+        redo={() => {
+          if (gameState.mode !== 'editor' || editorState.historyIndex >= editorState.history.length - 1) return;
+          const newHistoryIndex = editorState.historyIndex + 1;
+          const stateToLoad = editorState.history[newHistoryIndex];
+            if (stateToLoad) {
+              const restoredGameState: GameState = { // Add explicit type here
+                  ...gameState,
+                  ...stateToLoad
+              };
+              const ballAfterPlayerRestore = {
+                  ...restoredGameState.ball,
+                  radius: BASE_BALL_RADIUS * restoredGameState.lastSizeScaleMin,
+              };
+              const tempGameStateForBallReset = {...restoredGameState, ball: ballAfterPlayerRestore};
+              const ballResetData = resetBall(tempGameStateForBallReset);
+
+              setGameState({
+                    ...restoredGameState,
+                    ball: { ...ballAfterPlayerRestore, ...ballResetData.ball }
+              });
+              setEditorState(prevES => ({...prevES, historyIndex: newHistoryIndex, selectedItems: [], contextMenu: null}));
+          }
+        }}
+        createDefaultLevelData={createDefaultLevelData}
+        validateAndDefaultLevel={validateAndDefaultLevel}
+        resetBall={(currentGS: GameState) => setGameState(prev => ({...prev, ...resetBall(currentGS)}))}
+      />
+      
+      <div className="flex-grow h-full relative">
+        <button 
+          onClick={toggleGameMenu} 
+          className={`absolute top-4 left-4 z-30 bg-gray-600 text-white p-2 rounded-md hover:bg-gray-700 transition-all duration-150 ease-in-out md:hidden`}
+          title={showMenuUI ? "Hide Menu" : "Show Menu"}
+        >
+          {showMenuUI ? (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+          )}
+        </button>
+        
+        <div ref={canvasContainerRef} className="w-full h-full">
+          <GameCanvas 
+              canvasRef={canvasRef}
+              gameState={gameState}
+              setGameState={setGameState}
+              editorState={editorState}
+              setEditorState={setEditorState}
+              showUIMessage={showUIMessage}
+              resetBall={(currentGS) => setGameState(prev => ({...prev, ...resetBall(currentGS)}))}
+              saveHistoryState={() => saveHistoryState(false, gameState, editorState)} 
+              isPointerOverUIRef={isPointerOverUIRef}
           />
-        )}
-        {editorState.isMarqueeSelecting && <MarqueeBox marqueeState={editorState} />}
+          {editorState.contextMenu && (
+            <ContextMenuComponent
+              contextMenuState={editorState.contextMenu}
+              gameState={gameState}
+              setGameState={setGameState}
+              editorState={editorState}
+              setEditorState={setEditorState}
+              saveHistory={() => saveHistoryState(false, gameState, editorState)}
+              showUIMessage={showUIMessage}
+            />
+          )}
+          {editorState.isMarqueeSelecting && <MarqueeBox marqueeState={editorState} />}
+        </div>
       </div>
 
       {message && <MessageBox message={message.text} onClose={hideUIMessage} />}

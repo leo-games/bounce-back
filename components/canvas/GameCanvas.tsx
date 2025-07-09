@@ -30,6 +30,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   isPointerOverUIRef,
 }) => {
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const longPressTimeoutRef = useRef<number | null>(null);
+  const isTouchInteraction = useRef(false);
 
   // Drawing functions
   const drawHole = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -239,6 +241,28 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [gameState, editorState, draw]); // Redraw whenever gameState or editorState changes
 
   // --- Event Handling Logic ---
+  const getPointerPosition = (e: MouseEvent | TouchEvent): Point => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    let clientX, clientY;
+    if (e instanceof MouseEvent) {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    } else {
+      if (e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if (e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      } else {
+        return { x: editorState.mouse.x, y: editorState.mouse.y }; // Fallback
+      }
+    }
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  };
+
   const getItemAtPoint = useCallback((px: number, py: number): SelectedItem | null => {
     // Check bricks (last drawn is on top, so check in reverse)
     for (let i = gameState.bricks.length - 1; i >= 0; i--) {
@@ -301,7 +325,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [gameState, editorState.selectedItems]);
   
   const updateCursorStyle = useCallback((mx: number, my: number) => {
-    if (isPointerOverUIRef.current || gameState.mode !== 'editor') {
+    if (isPointerOverUIRef.current || gameState.mode !== 'editor' || isTouchInteraction.current) {
         setEditorState(prev => ({...prev, cursorStyle: 'default'}));
         return;
     }
@@ -326,19 +350,30 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [gameState.mode, getHandleAtPoint, getItemAtPoint, isPointOverSelection, isPointerOverUIRef, editorState.draggingHandle, editorState.isDraggingSelection, editorState.isMarqueeSelecting, setEditorState]);
 
 
-  // Mouse event handlers
-  const handleMouseDown = useCallback((e: MouseEvent) => {
-    if (e.button !== 0 || isPointerOverUIRef.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+  // --- Unified Event Handlers ---
+  const handlePointerDown = useCallback((e: MouseEvent | TouchEvent) => {
+    if (e instanceof MouseEvent && e.button !== 0) return;
+    if (isPointerOverUIRef.current) return;
+
+    isTouchInteraction.current = e.type.startsWith('touch');
+    if (isTouchInteraction.current) {
+        e.preventDefault(); // Prevent mouse event emulation
+    }
+
+    const { x: mx, y: my } = getPointerPosition(e);
 
     setEditorState(prev => ({ ...prev, mouse: { ...prev.mouse, x: mx, y: my, down: true, dragStartX: mx, dragStartY: my }, contextMenu: null }));
 
+    // Long press for context menu on touch
+    if (isTouchInteraction.current && gameState.mode === 'editor') {
+        longPressTimeoutRef.current = window.setTimeout(() => {
+            handleContextMenu(e);
+            longPressTimeoutRef.current = null;
+        }, 500); // 500ms for long press
+    }
+
     if (gameState.mode === 'editor') {
-        const ctrlPressed = e.ctrlKey || e.metaKey;
+        const ctrlPressed = e instanceof MouseEvent ? (e.ctrlKey || e.metaKey) : false; // No ctrl key on touch
         const clickedHandle = getHandleAtPoint(mx, my);
 
         if (clickedHandle) {
@@ -362,8 +397,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 }
                 setEditorState(prev => ({...prev, selectedItems: newSelectedItems}));
 
-                // Check if starting a drag of the selection
-                if (isPointOverSelection(mx,my)) { // Use the new selection for this check if needed (or check against clickedItem)
+                if (isPointOverSelection(mx,my)) {
                     saveHistoryState();
                     setEditorState(prev => ({
                         ...prev,
@@ -395,34 +429,40 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     } else { // Play mode
         if (gameState.ball.onPlayer) {
             setEditorState(prev => ({ ...prev, aim: { ...prev.aim, active: true } }));
-            // Initial aim update
             const aimVecRaw = Vec.sub({ x: mx, y: my }, { x: gameState.ball.x, y: gameState.ball.y });
             let aimPowerLength = Vec.len(aimVecRaw);
-            aimPowerLength = Math.min(aimPowerLength, gameState.scaledAimLineLength); // Clamp visual length
-            const power = aimPowerLength / Constants.AIM_POWER_FACTOR;
+            aimPowerLength = Math.min(aimPowerLength, gameState.scaledAimLineLength);
+            const power = Constants.AIM_POWER_FACTOR;
             const normAimVec = Vec.normalize(aimVecRaw);
             let finalVy = normAimVec.y * power;
-            if (finalVy > Constants.MIN_AIM_VY) finalVy = Constants.MIN_AIM_VY; // Ensure it goes up
+            if (finalVy > Constants.MIN_AIM_VY) finalVy = Constants.MIN_AIM_VY;
             setEditorState(prev => ({...prev, aim: {...prev.aim, dx: normAimVec.x * power, dy: finalVy }}));
         }
     }
     updateCursorStyle(mx, my);
-  }, [gameState, editorState, getItemAtPoint, getHandleAtPoint, saveHistoryState, isPointerOverUIRef, updateCursorStyle, isPointOverSelection, setEditorState, canvasRef]);
+  }, [gameState, editorState, getItemAtPoint, getHandleAtPoint, saveHistoryState, isPointerOverUIRef, updateCursorStyle, isPointOverSelection, setEditorState]);
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    if (!editorState.mouse.down) { // Update cursor on hover when not dragging
-        if (!isPointerOverUIRef.current) {
-           updateCursorStyle(mx,my);
+  const handlePointerMove = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!editorState.mouse.down) {
+        if (!isTouchInteraction.current) {
+            const { x: mx, y: my } = getPointerPosition(e);
+            updateCursorStyle(mx, my);
         }
         return;
     }
-    if (isPointerOverUIRef.current) return; // Don't process game drag if pointer over UI
+    if (isPointerOverUIRef.current) return;
+    
+    if (isTouchInteraction.current) {
+        e.preventDefault();
+    }
+
+    const { x: mx, y: my } = getPointerPosition(e);
+
+    // If moving, cancel long press
+    if (longPressTimeoutRef.current && Vec.lenSq(Vec.sub({x:mx, y:my}, {x: editorState.mouse.dragStartX, y: editorState.mouse.dragStartY})) > Constants.CLICK_THRESHOLD_SQ) {
+        clearTimeout(longPressTimeoutRef.current);
+        longPressTimeoutRef.current = null;
+    }
 
     setEditorState(prev => ({ ...prev, mouse: { ...prev.mouse, x: mx, y: my } }));
 
@@ -450,8 +490,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                     const cosA = Math.cos(-origAngle); const sinA = Math.sin(-origAngle);
                     const ocx = origState.x + origState.width / 2; const ocy = origState.y + origState.height / 2;
                     
-                    const dxWorld = mx - ocx; const dyWorld = my - ocy; // Mouse relative to original center, in world coords
-                    const localMx = dxWorld * cosA - dyWorld * sinA; // Mouse in brick's local unrotated frame, relative to original center
+                    const dxWorld = mx - ocx; const dyWorld = my - ocy;
+                    const localMx = dxWorld * cosA - dyWorld * sinA;
                     const localMy = dxWorld * sinA + dyWorld * cosA;
 
                     let newHalfWidth, newHalfHeight;
@@ -469,13 +509,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                     const newWidth = 2 * newHalfWidth;
                     const newHeight = 2 * newHalfHeight;
 
-                    // Calculate new top-left for the new dimensions, keeping the dragged handle fixed
-                    // This involves calculating how the center shifts
                     let centerShiftXLocal = 0; let centerShiftYLocal = 0;
-
                     if (handleType === 'tl' || handleType === 'bl') centerShiftXLocal = (origState.width - newWidth) / 2;
                     else centerShiftXLocal = (newWidth - origState.width) / 2;
-
                     if (handleType === 'tl' || handleType === 'tr') centerShiftYLocal = (origState.height - newHeight) / 2;
                     else centerShiftYLocal = (newHeight - origState.height) / 2;
                     
@@ -507,7 +543,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
                 editorState.selectedItems.forEach((item, i) => {
                     const origState = editorState.originalItemStates[i];
-                    if (!origState) return prevGS; // Should not happen if originalItemStates is populated correctly
+                    if (!origState) return;
 
                     if (item.type === 'brick' && item.index !== null) {
                         const brick = newBricks[item.index];
@@ -518,7 +554,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                             if (brick.initialY !== undefined && (origState as Brick).initialY !== undefined) brick.initialY = (origState as Brick).initialY! + dy;
                         }
                     } else if (item.type === 'player') {
-                        newPlayer.x = (origState as Point).x + dx; // Assuming Point for player/hole original state
+                        newPlayer.x = (origState as Point).x + dx;
                         newPlayer.y = (origState as Point).y + dy;
                     } else if (item.type === 'hole') {
                         newHole.x = (origState as Point).x + dx;
@@ -527,8 +563,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 });
                 const finalState = { ...prevGS, bricks: newBricks, player: newPlayer, hole: newHole };
                 if (editorState.selectedItems.some(it => it.type === 'player') && finalState.ball.onPlayer) {
-                     resetBall(finalState); // This will trigger App.tsx to update its state including the ball.
-                                           // The `finalState.ball` here is not modified by this call directly.
+                     resetBall(finalState);
                 }
                 return finalState;
             });
@@ -540,25 +575,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             const aimVecRaw = Vec.sub({ x: mx, y: my }, { x: gameState.ball.x, y: gameState.ball.y });
             let aimPowerLength = Vec.len(aimVecRaw);
             aimPowerLength = Math.min(aimPowerLength, gameState.scaledAimLineLength);
-            const power = aimPowerLength / Constants.AIM_POWER_FACTOR;
+            const power = Constants.AIM_POWER_FACTOR;
             const normAimVec = Vec.normalize(aimVecRaw);
             let finalVy = normAimVec.y * power;
             if (finalVy > Constants.MIN_AIM_VY) finalVy = Constants.MIN_AIM_VY;
             setEditorState(prev => ({...prev, aim: {...prev.aim, dx: normAimVec.x * power, dy: finalVy }}));
         }
     }
-    if (!isPointerOverUIRef.current) updateCursorStyle(mx,my); // Update cursor during drag as well
-  }, [gameState, editorState, resetBall, isPointerOverUIRef, updateCursorStyle, setGameState, setEditorState, canvasRef]);
+    if (!isPointerOverUIRef.current) updateCursorStyle(mx,my);
+  }, [gameState, editorState, resetBall, isPointerOverUIRef, updateCursorStyle, setGameState, setEditorState]);
 
-  const handleMouseUp = useCallback((e: MouseEvent) => {
-    if (e.button !== 0 || !editorState.mouse.down) return; // Only primary button and if mouse was down
-    if (isPointerOverUIRef.current && editorState.mouse.down) { // If mouseup happens over UI but drag started on canvas
-        // Treat as drag end to avoid sticky states
-    } else if (isPointerOverUIRef.current) { // Mouse up genuinely over UI, no canvas interaction
-        setEditorState(prev => ({ ...prev, mouse: { ...prev.mouse, down: false } })); // Still need to release mouse down state
+  const handlePointerUp = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!editorState.mouse.down) return;
+    if (isPointerOverUIRef.current && editorState.mouse.down) {
+        // Let go over UI
+    } else if (isPointerOverUIRef.current) {
+        setEditorState(prev => ({ ...prev, mouse: { ...prev.mouse, down: false } }));
         return;
     }
 
+    if (longPressTimeoutRef.current) {
+        clearTimeout(longPressTimeoutRef.current);
+        longPressTimeoutRef.current = null;
+    }
 
     const wasDraggingHandle = !!editorState.draggingHandle;
     const wasDraggingSelection = editorState.isDraggingSelection;
@@ -567,14 +606,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     if (gameState.mode === 'editor') {
         if (wasDraggingHandle || wasDraggingSelection) {
-             // Finalize positions for movers
             setGameState(prevGS => {
                 const newBricks = prevGS.bricks.map((brick, idx) => {
                     if (editorState.selectedItems.some(sel => sel.type === 'brick' && sel.index === idx) || 
                         (editorState.draggingHandle && editorState.draggingHandle.itemRef.type === 'brick' && editorState.draggingHandle.itemRef.index === idx)
                     ) {
                         const updatedBrick = {...brick};
-                        if (updatedBrick.movementType) { // Update initialX/Y for movers after drag/resize
+                        if (updatedBrick.movementType) {
                             updatedBrick.initialX = updatedBrick.x;
                             updatedBrick.initialY = updatedBrick.y;
                         }
@@ -584,9 +622,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 });
                 return {...prevGS, bricks: newBricks};
             });
-            saveHistoryState(); // Save history after drag/resize operation is complete
+            saveHistoryState();
         }
-
 
         if (editorState.isMarqueeSelecting) {
             const marqueeRect = {
@@ -595,12 +632,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 width: Math.abs(editorState.marqueeStart.x - editorState.marqueeEnd.x),
                 height: Math.abs(editorState.marqueeStart.y - editorState.marqueeEnd.y),
             };
-            if (marqueeRect.width < Constants.CLICK_THRESHOLD_SQ && marqueeRect.height < Constants.CLICK_THRESHOLD_SQ) { // Simple click
-                 if (!(e.ctrlKey || e.metaKey)) {
-                    // Only deselect if it wasn't a handle click or item click (which are handled in mousedown)
-                    // This logic branch is for empty space clicks leading to marquee.
-                    // If we reached here from a click (not drag) on empty space, mousedown logic for empty space already handled selection.
-                 }
+            if (marqueeRect.width < Constants.CLICK_THRESHOLD_SQ && marqueeRect.height < Constants.CLICK_THRESHOLD_SQ) {
+                // Simple click/tap handled in pointer down
             } else { // Proper marquee selection
                 const newlySelected: SelectedItem[] = [];
                 gameState.bricks.forEach((brick, index) => {
@@ -609,21 +642,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                         newlySelected.push({ type: 'brick', index: index });
                     }
                 });
-                // Add player/hole if they overlap marquee (simplified check)
                 const playerBounds = {x: gameState.player.x, y: gameState.player.y - gameState.player.headRadius, width: gameState.player.width, height: gameState.player.height + gameState.player.headRadius};
                 if (doRectsOverlap(marqueeRect, playerBounds)) newlySelected.push({type:'player', index: null});
                 const holeBounds = {x: gameState.hole.x - gameState.hole.radius, y: gameState.hole.y - gameState.hole.radius, width: gameState.hole.radius*2, height: gameState.hole.radius*2};
                 if (doRectsOverlap(marqueeRect, holeBounds)) newlySelected.push({type:'hole', index: null});
 
-                if (e.ctrlKey || e.metaKey) {
+                const ctrlPressed = e instanceof MouseEvent ? (e.ctrlKey || e.metaKey) : false;
+                if (ctrlPressed) {
                     setEditorState(prev => {
                         const currentSelectionMap = new Map<string, SelectedItem>();
                         prev.selectedItems.forEach(item => currentSelectionMap.set(`${item.type}-${item.index}`, item));
                         newlySelected.forEach(newItem => {
                            const key = `${newItem.type}-${newItem.index}`;
-                           if (!currentSelectionMap.has(key)) { // Add if not already selected
+                           if (!currentSelectionMap.has(key)) {
                                 currentSelectionMap.set(key, newItem);
-                           } // If Ctrl + marquee over already selected items, they remain selected.
+                           }
                         });
                         return {...prev, selectedItems: Array.from(currentSelectionMap.values())};
                     });
@@ -638,95 +671,87 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             draggingHandle: null,
             isDraggingSelection: false,
             isMarqueeSelecting: false,
-            originalItemStates: [], // Clear after operation
+            originalItemStates: [],
         }));
 
     } else { // Play mode
         if (editorState.aim.active && gameState.ball.onPlayer) {
-            if (Math.abs(editorState.aim.dx) > 0.01 || Math.abs(editorState.aim.dy) < -0.01) { // Ensure some power
+            if (Math.abs(editorState.aim.dx) > 0.01 || Math.abs(editorState.aim.dy) < -0.01) {
                 setGameState(prev => ({ ...prev, ball: { ...prev.ball, fired: true, onPlayer: false, vx: editorState.aim.dx, vy: editorState.aim.dy } }));
             }
             setEditorState(prev => ({ ...prev, aim: { ...prev.aim, active: false } }));
         }
     }
-    const canvas = canvasRef.current;
-    if(canvas && !isPointerOverUIRef.current){
-        const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        updateCursorStyle(mx, my);
-    } else {
-        updateCursorStyle(0,0); // Reset cursor or use last known non-UI coords
-    }
-  }, [gameState, editorState, updateCursorStyle, saveHistoryState, setGameState, setEditorState, canvasRef, isPointerOverUIRef]);
+    const { x: mx, y: my } = getPointerPosition(e);
+    updateCursorStyle(mx, my);
+    isTouchInteraction.current = false; // Reset on up
+  }, [gameState, editorState, updateCursorStyle, saveHistoryState, setGameState, setEditorState, isPointerOverUIRef]);
 
-  const handleContextMenu = useCallback((e: MouseEvent) => {
+  const handleContextMenu = useCallback((e: MouseEvent | TouchEvent) => {
     e.preventDefault();
     if (isPointerOverUIRef.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    
+    const { x: clientX, y: clientY } = (e instanceof MouseEvent) 
+        ? { x: e.clientX, y: e.clientY }
+        : { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+
+    const { x: mx, y: my } = getPointerPosition(e);
 
     if (gameState.mode === 'editor') {
         let target: ContextMenuTarget | null = null;
         const itemAtPoint = getItemAtPoint(mx, my);
         if (itemAtPoint) {
             target = { type: itemAtPoint.type, index: itemAtPoint.index, x: mx, y: my };
-            // Select item if not already selected (unless it's part of multi-selection)
-             const isAlreadySelected = editorState.selectedItems.some(sel => sel.type === itemAtPoint.type && sel.index === itemAtPoint.index);
+            const isAlreadySelected = editorState.selectedItems.some(sel => sel.type === itemAtPoint.type && sel.index === itemAtPoint.index);
             if (!isAlreadySelected) {
                  setEditorState(prev => ({...prev, selectedItems: [itemAtPoint]}));
             }
         } else {
             target = { type: 'empty', x: mx, y: my };
-             if (!(e.ctrlKey || e.metaKey)) { // Deselect if clicking empty space without Ctrl
+            const ctrlPressed = e instanceof MouseEvent ? (e.ctrlKey || e.metaKey) : false;
+            if (!ctrlPressed) {
                 setEditorState(prev => ({...prev, selectedItems: []}));
-             }
+            }
         }
-        setEditorState(prev => ({ ...prev, contextMenu: { x: e.clientX, y: e.clientY, target } }));
+        setEditorState(prev => ({ ...prev, contextMenu: { x: clientX, y: clientY, target } }));
     }
-  }, [gameState.mode, getItemAtPoint, editorState.selectedItems, isPointerOverUIRef, setEditorState, canvasRef]);
+  }, [gameState.mode, getItemAtPoint, editorState.selectedItems, isPointerOverUIRef, setEditorState]);
 
-  const handleMouseLeave = useCallback((e: MouseEvent) => { // Added e argument
+  const handlePointerLeave = useCallback((e: MouseEvent | TouchEvent) => {
     if(editorState.mouse.down) { 
-        // Simulate mouse up if mouse leaves canvas while pressed.
-        // Need to pass a valid MouseEvent or adapt handleMouseUp.
-        // For simplicity, just clearing states. A more robust solution might be needed.
         setEditorState(prev => ({
             ...prev, 
             mouse: {...prev.mouse, down: false},
             draggingHandle: null,
             isDraggingSelection: false,
-            // Don't clear marquee selection on mouse leave, only on mouse up.
-            aim: {...prev.aim, active: false} // Also disable aim if active
+            aim: {...prev.aim, active: false}
         }));
     }
-    if (editorState.aim.active) { // If aiming and mouse leaves
+    if (editorState.aim.active) {
         setEditorState(prev => ({...prev, aim: {...prev.aim, active: false}}));
     }
-     setEditorState(prev => ({...prev, cursorStyle: 'default'})); // Reset cursor
+    setEditorState(prev => ({...prev, cursorStyle: 'default'}));
+    isTouchInteraction.current = false;
   }, [editorState.mouse.down, editorState.aim.active, setEditorState]);
 
 
-  // Keyboard events (delegated from App.tsx or listen here)
+  // Keyboard events
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (isPointerOverUIRef.current) return; // Ignore if pointer over UI panel
+    if (isPointerOverUIRef.current) return;
 
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || (activeEl as HTMLElement).isContentEditable) ) {
-      return; // Ignore if focus is on an input element
+      return;
     }
     
     if (gameState.mode !== 'editor') return;
 
     const ctrlPressed = e.ctrlKey || e.metaKey;
 
-    if (ctrlPressed && e.key.toLowerCase() === 'z') { e.preventDefault(); /* undo action via prop from App.tsx */ }
-    else if (ctrlPressed && e.key.toLowerCase() === 'y') { e.preventDefault(); /* redo action via prop from App.tsx */ }
-    else if (ctrlPressed && e.key.toLowerCase() === 'c') { e.preventDefault(); /* copy action - needs ContextMenu logic here or passed up */ }
-    else if (ctrlPressed && e.key.toLowerCase() === 'v') { e.preventDefault(); /* paste action - needs ContextMenu logic here or passed up */ }
+    if (ctrlPressed && e.key.toLowerCase() === 'z') { e.preventDefault(); /* undo handled by prop */ }
+    else if (ctrlPressed && e.key.toLowerCase() === 'y') { e.preventDefault(); /* redo handled by prop */ }
+    else if (ctrlPressed && e.key.toLowerCase() === 'c') { e.preventDefault(); /* copy handled by prop */ }
+    else if (ctrlPressed && e.key.toLowerCase() === 'v') { e.preventDefault(); /* paste handled by prop */ }
     else if ((e.key === "Delete" || e.key === "Backspace") && editorState.selectedItems.length > 0) {
         e.preventDefault();
         const containsNonBrick = editorState.selectedItems.some(item => item.type !== 'brick');
@@ -736,26 +761,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
         saveHistoryState();
         setGameState(prevGS => {
-            // Filter out only bricks
             const bricksToDeleteIndices = editorState.selectedItems
                 .filter(item => item.type === 'brick' && item.index !== null)
                 .map(item => item.index!);
 
-            if (bricksToDeleteIndices.length === 0 && containsNonBrick) {
-                return prevGS; // No bricks were selected for deletion
-            }
-            if (bricksToDeleteIndices.length === 0 && !containsNonBrick) { // Nothing to delete
-                return prevGS;
-            }
-
+            if (bricksToDeleteIndices.length === 0 && containsNonBrick) return prevGS;
+            if (bricksToDeleteIndices.length === 0 && !containsNonBrick) return prevGS;
 
             const newBricks = prevGS.bricks.filter((_, index) => !bricksToDeleteIndices.includes(index));
-            
-            // Adjust indices of remaining selected items if any deletion occurred before them
-            // This is complex if other items types were part of selection. For now, just clear selection.
             return {...prevGS, bricks: newBricks };
         });
-        // Deselect all after delete, simplifies index management for remaining selections
         setEditorState(prevES => ({...prevES, selectedItems: []})); 
         if (!containsNonBrick && editorState.selectedItems.length > 0){
              showUIMessage(`Deleted ${editorState.selectedItems.length} brick(s).`);
@@ -775,7 +790,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             e.preventDefault();
             if (editorState.selectedItems.length > 0) {
                 if (!editorState.isNudging) {
-                    saveHistoryState(); // Save history only at the start of a nudge sequence
+                    saveHistoryState();
                     setEditorState(prev => ({...prev, isNudging: true}));
                 }
                 setGameState(prevGS => {
@@ -798,7 +813,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                     });
                     const finalState = { ...prevGS, bricks: newBricks, player: newPlayer, hole: newHole };
                     if (editorState.selectedItems.some(it => it.type === 'player') && finalState.ball.onPlayer) {
-                         resetBall(finalState); // Prop call, updates App.tsx state.
+                         resetBall(finalState);
                     }
                     return finalState;
                 });
@@ -818,7 +833,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
         if (editorState.isNudging) {
             setEditorState(prev => ({...prev, isNudging: false}));
-            // History was saved at the start of nudge sequence (on keydown).
         }
     }
   }, [gameState.mode, editorState.isNudging, isPointerOverUIRef, setEditorState]);
@@ -828,31 +842,43 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Mouse events on canvas
-    canvas.addEventListener('mousedown', handleMouseDown);
-    canvas.addEventListener('contextmenu', handleContextMenu);
-    canvas.addEventListener('mouseleave', handleMouseLeave);
+    // Use passive: false for touch events to allow preventDefault
+    const eventOptions = { passive: false };
 
-    // Mouse events on document/window for dragging and mouse up outside canvas
-    // These are needed so that if a mousedown starts on canvas, mousemove and mouseup
-    // are captured even if cursor leaves the canvas.
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    // Pointer events
+    canvas.addEventListener('mousedown', handlePointerDown);
+    canvas.addEventListener('touchstart', handlePointerDown, eventOptions);
     
-    // Keyboard events on document
+    document.addEventListener('mousemove', handlePointerMove);
+    document.addEventListener('touchmove', handlePointerMove, eventOptions);
+
+    document.addEventListener('mouseup', handlePointerUp);
+    document.addEventListener('touchend', handlePointerUp, eventOptions);
+
+    // Other events
+    canvas.addEventListener('contextmenu', handleContextMenu);
+    canvas.addEventListener('mouseleave', handlePointerLeave);
+    canvas.addEventListener('touchcancel', handlePointerLeave);
+    
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('keyup', handleKeyUp);
 
     return () => {
-      canvas.removeEventListener('mousedown', handleMouseDown);
+      canvas.removeEventListener('mousedown', handlePointerDown);
+      canvas.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('mousemove', handlePointerMove);
+      document.removeEventListener('touchmove', handlePointerMove);
+      document.removeEventListener('mouseup', handlePointerUp);
+      document.removeEventListener('touchend', handlePointerUp);
+      
       canvas.removeEventListener('contextmenu', handleContextMenu);
-      canvas.removeEventListener('mouseleave', handleMouseLeave);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      canvas.removeEventListener('mouseleave', handlePointerLeave);
+      canvas.removeEventListener('touchcancel', handlePointerLeave);
+
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('keyup', handleKeyUp);
     };
-  }, [handleMouseDown, handleMouseMove, handleMouseUp, handleContextMenu, handleMouseLeave, handleKeyDown, handleKeyUp, canvasRef]);
+  }, [handlePointerDown, handlePointerMove, handlePointerUp, handleContextMenu, handlePointerLeave, handleKeyDown, handleKeyUp, canvasRef]);
   
   useEffect(() => {
     if (canvasRef.current) {

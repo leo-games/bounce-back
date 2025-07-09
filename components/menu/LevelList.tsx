@@ -21,8 +21,8 @@ const LevelList: React.FC<LevelListProps> = ({
 }) => {
   return (
     <div className="border rounded-md p-2 bg-gray-50 shadow-inner">
-      <h4 className="text-sm font-medium mb-1 text-gray-700">Levels:</h4>
-      <ul className="text-sm max-h-48 overflow-y-auto mb-2 border rounded bg-white divide-y divide-gray-200">
+      <h4 className="text-base font-medium mb-1 text-gray-700 md:text-sm">Levels:</h4>
+      <ul className="text-base md:text-sm max-h-48 overflow-y-auto mb-2 border rounded bg-white divide-y divide-gray-200">
         {levels.map((level, index) => (
           <li
             key={index}
@@ -48,7 +48,7 @@ const LevelList: React.FC<LevelListProps> = ({
                 title="Move Up"
                 onClick={(e) => { e.stopPropagation(); onMoveLevelUp(index); }}
                 disabled={index === 0}
-                className="p-1 text-xs rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1.5 text-base md:text-xs rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 &uarr;
               </button>
@@ -56,7 +56,7 @@ const LevelList: React.FC<LevelListProps> = ({
                 title="Move Down"
                 onClick={(e) => { e.stopPropagation(); onMoveLevelDown(index); }}
                 disabled={index === levels.length - 1}
-                className="p-1 text-xs rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1.5 text-base md:text-xs rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 &darr;
               </button>

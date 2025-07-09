@@ -1,99 +1,33 @@
 {
-  "name": "Level 4",
-  "savedCanvasWidth": 800,
-  "savedCanvasHeight": 600,
+  "name": "Level 4: Danger Zone",
+  "savedCanvasWidth": 1280,
+  "savedCanvasHeight": 720,
   "bricks": [
     {
-      "angle": 0,
-      "isKillBrick": false,
-      "movementType": "horizontal",
-      "moveSpeed": 0.8,
       "x": 200,
-      "y": 450,
-      "width": 150,
-      "height": 20,
-      "moveRange": 150,
-      "initialX": 200,
-      "initialY": 450,
-      "baseWidth": 150,
-      "baseHeight": 20
-    },
-    {
-      "angle": 0,
-      "isKillBrick": false,
-      "movementType": "vertical",
-      "moveSpeed": 1.5,
-      "x": 300,
-      "y": 200,
-      "width": 20,
-      "height": 120,
-      "moveRange": 50,
-      "initialX": 300,
-      "initialY": 200,
-      "baseWidth": 20,
-      "baseHeight": 120
-    },
-    {
-      "angle": 0,
-      "isKillBrick": false,
-      "movementType": "vertical",
-      "moveSpeed": 1.5,
-      "x": 480,
-      "y": 250, 
-      "width": 20,
-      "height": 120,
-      "moveRange": 50,
-      "initialX": 480,
-      "initialY": 250,
-      "baseWidth": 20,
-      "baseHeight": 120
-    },
-    {
-      "angle": 0.4,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": 50,
-      "y": 300,
-      "width": 100,
-      "height": 20,
-      "moveRange": 50,
-      "baseWidth": 100,
-      "baseHeight": 20
-    },
-    {
+      "y": 360,
+      "width": 400,
+      "height": 30,
       "angle": 0,
       "isKillBrick": true,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": 390,
-      "y": 30,
-      "width": 20,
-      "height": 10,
-      "moveRange": 50,
-      "baseWidth": 20,
-      "baseHeight": 10
+      "movementType": null
     },
     {
-      "angle": -0.3,
-      "isKillBrick": false,
-      "movementType": null,
-      "moveSpeed": 1,
-      "x": 600,
-      "y": 150,
-      "width": 100,
-      "height": 20,
-      "moveRange": 50,
-      "baseWidth": 100,
-      "baseHeight": 20
+      "x": 680,
+      "y": 360,
+      "width": 400,
+      "height": 30,
+      "angle": 0,
+      "isKillBrick": true,
+      "movementType": null
     }
   ],
   "player": {
-    "x": 380,
-    "y": 540
+    "x": 600,
+    "y": 680
   },
   "hole": {
-    "x": 400,
-    "y": 60
+    "x": 640,
+    "y": 100
   }
 }
