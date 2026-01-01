@@ -7,6 +7,8 @@ import {
   MAX_BALL_SPEED,
   MIN_LAUNCH_MAGNITUDE,
   MAX_LAUNCH_MAGNITUDE,
+  GRAB_HIT_RADIUS,
+  BALL_RADIUS,
 } from '@/utils/constants';
 
 export interface GameCallbacks {
@@ -105,9 +107,23 @@ export class Game {
     const screenPos = { x: e.offsetX, y: e.offsetY };
     const normalizedPos = this.renderer.toNormalized(screenPos);
 
-    this.isDragging = true;
-    this.dragCurrentPos = normalizedPos;
-    this.setPlayState('aiming');
+    // "The Grab" - Check if click is on ball or player
+    const ball = this.level.ball;
+    const playerCenter = this.level.player.getBallOrbitCenter();
+
+    const distToBall = Vec.distance(normalizedPos, ball.position);
+    const distToPlayer = Vec.distance(normalizedPos, playerCenter);
+
+    // Check if clicking on ball or player (use larger hit radius for easier grabbing)
+    const hitRadius = GRAB_HIT_RADIUS + BALL_RADIUS;
+    if (distToBall <= hitRadius || distToPlayer <= hitRadius) {
+      // Grab the ball - freeze orbit at current position
+      ball.grab();
+      this.isDragging = true;
+      this.dragCurrentPos = normalizedPos;
+      this.setPlayState('aiming');
+    }
+    // If not clicking on ball/player, do nothing (don't start aiming)
   }
 
   private handlePointerMove(e: MouseEvent): void {
@@ -116,21 +132,14 @@ export class Game {
     const screenPos = { x: e.offsetX, y: e.offsetY };
     this.dragCurrentPos = this.renderer.toNormalized(screenPos);
 
-    // Calculate launch parameters
-    // Direction is FROM player TOWARD drag position (intuitive aiming)
-    const playerPos = this.level.player.getBallOrbitCenter();
-    const aimVector = Vec.sub(this.dragCurrentPos, playerPos);
-    const aimDistance = Vec.length(aimVector);
+    // "Direct Aiming" - Move the ball to the drag position (clamped to max radius)
+    const ball = this.level.ball;
+    ball.setDragPosition(this.dragCurrentPos);
 
-    // Magnitude based on distance from player (clamped)
-    this.launchMagnitude = Math.min(
-      Math.max(aimDistance / 0.3, 0), // 0.3 normalized distance = max power
-      MAX_LAUNCH_MAGNITUDE
-    );
-
-    if (aimDistance > 0.001) {
-      this.launchDirection = Vec.normalize(aimVector);
-    }
+    // Calculate launch parameters based on ball position relative to player
+    const launchParams = ball.getLaunchParams();
+    this.launchDirection = launchParams.direction;
+    this.launchMagnitude = launchParams.magnitude * MAX_LAUNCH_MAGNITUDE;
   }
 
   private handlePointerUp(): void {
@@ -140,11 +149,14 @@ export class Game {
     }
 
     this.isDragging = false;
+    const ball = this.level.ball;
 
-    // Launch if magnitude is sufficient
+    // "The Launch" - Launch if magnitude is sufficient
     if (this.launchMagnitude >= MIN_LAUNCH_MAGNITUDE) {
       this.launchBall();
     } else {
+      // Release grab without launching - return to orbit
+      ball.releaseGrab();
       this.setPlayState('idle');
     }
   }
@@ -266,18 +278,18 @@ export class Game {
       return;
     }
 
-    // Prepare launch indicator
+    // Prepare launch indicator - "Short Pointer" from ball showing launch direction
     let launchIndicator: LaunchIndicator | null = null;
     if (this.isDragging && this.launchMagnitude >= MIN_LAUNCH_MAGNITUDE) {
       launchIndicator = {
         active: true,
-        startPos: this.level.player.getBallOrbitCenter(),
+        startPos: this.level.ball.position,  // Arrow starts from ball, not player
         direction: this.launchDirection,
         magnitude: this.launchMagnitude,
       };
     }
 
-    this.renderer.render(this.level, launchIndicator);
+    this.renderer.render(this.level, launchIndicator, this.isDragging);
   }
 
   // Getters for UI
