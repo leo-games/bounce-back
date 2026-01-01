@@ -1,4 +1,4 @@
-import type { Vector, CanvasDimensions } from '@/types';
+import type { Vector, CanvasDimensions, BrickData } from '@/types';
 import { Level } from './Level';
 import { Brick } from './entities/bricks/Brick';
 import { Ball } from './entities/Ball';
@@ -484,9 +484,15 @@ export class Renderer {
   drawEditorOverlay(
     level: Level,
     selectedIds: Set<string>,
-    hoveredId: string | null
+    hoveredId: string | null,
+    oscillationEditBrick: BrickData | null = null
   ): void {
     const { ctx } = this;
+
+    // Draw oscillation ghost preview if editing
+    if (oscillationEditBrick?.movement) {
+      this.drawOscillationPreview(oscillationEditBrick);
+    }
 
     // Draw selection boxes around selected bricks
     for (const brick of level.bricks) {
@@ -566,5 +572,109 @@ export class Renderer {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+
+  // Draw oscillation preview with ghost outlines and drag handles
+  private drawOscillationPreview(brick: BrickData): void {
+    if (!brick.movement) return;
+
+    const { ctx } = this;
+    const width = this.scaleSize(brick.size.width);
+    const height = this.scaleSize(brick.size.height, true);
+    const range = brick.movement.range;
+    const axis = brick.movement.axis;
+
+    ctx.save();
+
+    // Draw ghost outlines at movement extremes
+    const drawGhostBrick = (offsetX: number, offsetY: number) => {
+      const ghostPos = this.toScreen({
+        x: brick.position.x + offsetX,
+        y: brick.position.y + offsetY
+      });
+
+      ctx.save();
+      ctx.translate(ghostPos.x, ghostPos.y);
+      ctx.rotate(brick.angle);
+
+      // Ghost fill
+      ctx.fillStyle = 'rgba(168, 85, 247, 0.15)';
+      const cornerRadius = Math.min(width, height) * 0.15;
+      ctx.beginPath();
+      ctx.roundRect(-width / 2, -height / 2, width, height, cornerRadius);
+      ctx.fill();
+
+      // Ghost outline
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.restore();
+    };
+
+    // Draw ghosts based on axis
+    if (axis === 'horizontal' || axis === 'both') {
+      drawGhostBrick(-range, 0);
+      drawGhostBrick(range, 0);
+    }
+    if (axis === 'vertical' || axis === 'both') {
+      drawGhostBrick(0, -range);
+      drawGhostBrick(0, range);
+    }
+
+    // Draw movement path line
+    ctx.strokeStyle = 'rgba(168, 85, 247, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+
+    if (axis === 'horizontal' || axis === 'both') {
+      const leftPos = this.toScreen({ x: brick.position.x - range, y: brick.position.y });
+      const rightPos = this.toScreen({ x: brick.position.x + range, y: brick.position.y });
+      ctx.beginPath();
+      ctx.moveTo(leftPos.x, leftPos.y);
+      ctx.lineTo(rightPos.x, rightPos.y);
+      ctx.stroke();
+    }
+
+    if (axis === 'vertical' || axis === 'both') {
+      const topPos = this.toScreen({ x: brick.position.x, y: brick.position.y - range });
+      const bottomPos = this.toScreen({ x: brick.position.x, y: brick.position.y + range });
+      ctx.beginPath();
+      ctx.moveTo(topPos.x, topPos.y);
+      ctx.lineTo(bottomPos.x, bottomPos.y);
+      ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
+
+    // Draw drag handles at range endpoints
+    const drawHandle = (x: number, y: number) => {
+      const pos = this.toScreen({ x, y });
+
+      // Outer circle
+      ctx.fillStyle = '#A855F7';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 10, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Inner circle
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    if (axis === 'horizontal' || axis === 'both') {
+      drawHandle(brick.position.x - range, brick.position.y);
+      drawHandle(brick.position.x + range, brick.position.y);
+    }
+    if (axis === 'vertical' || axis === 'both') {
+      drawHandle(brick.position.x, brick.position.y - range);
+      drawHandle(brick.position.x, brick.position.y + range);
+    }
+
+    ctx.restore();
   }
 }
