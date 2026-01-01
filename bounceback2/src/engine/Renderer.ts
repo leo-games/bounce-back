@@ -10,6 +10,10 @@ import {
   PLAYER_HEIGHT,
   HOLE_RADIUS,
   MAX_LAUNCH_MAGNITUDE,
+  BALL_ORBIT_RADIUS,
+  MAX_DRAG_RADIUS,
+  LAUNCH_POINTER_LENGTH,
+  ORBIT_PATH_DASH,
 } from '@/utils/constants';
 
 export interface LaunchIndicator {
@@ -123,7 +127,7 @@ export class Renderer {
     ctx.fillRect(dimensions.offsetX, dimensions.offsetY, dimensions.width, dimensions.height);
   }
 
-  render(level: Level, launchIndicator: LaunchIndicator | null): void {
+  render(level: Level, launchIndicator: LaunchIndicator | null, isAiming: boolean = false): void {
     this.clear();
 
     // Draw hole first (behind everything)
@@ -134,13 +138,28 @@ export class Renderer {
       this.drawBrick(brick);
     }
 
-    // Handle 3D orbit effect - draw ball behind or in front of player
     const ball = level.ball;
+    const playerOrbitCenter = level.player.getBallOrbitCenter();
 
+    // Draw orbit path (faint dashed circle) when not launched
+    if (!ball.isLaunched) {
+      this.drawOrbitPath(playerOrbitCenter);
+    }
+
+    // Draw max drag radius when aiming
+    if (isAiming && ball.isGrabbed) {
+      this.drawMaxDragRadius(playerOrbitCenter);
+    }
+
+    // Handle 3D orbit effect - draw ball behind or in front of player
     if (ball.isLaunched) {
       // When launched, draw player then ball (ball always in front)
       this.drawPlayer(level.player.position);
       this.drawBall(ball);
+    } else if (ball.isGrabbed) {
+      // When grabbed, ball is always in front and larger
+      this.drawPlayer(level.player.position);
+      this.drawOrbitBall(ball);
     } else {
       // Orbiting - respect depth order
       if (ball.orbitDepth < 0) {
@@ -154,9 +173,9 @@ export class Renderer {
       }
     }
 
-    // Draw launch indicator
+    // Draw launch indicator (short pointer from ball)
     if (launchIndicator?.active) {
-      this.drawLaunchIndicator(launchIndicator);
+      this.drawLaunchPointer(launchIndicator);
     }
   }
 
@@ -425,23 +444,59 @@ export class Renderer {
     ctx.stroke();
   }
 
-  private drawLaunchIndicator(indicator: LaunchIndicator): void {
+  // Draw the orbit path as a faint dashed ellipse
+  private drawOrbitPath(center: Vector): void {
+    const { ctx } = this;
+    const screenPos = this.toScreen(center);
+    const orbitRadiusX = this.scaleSize(BALL_ORBIT_RADIUS);
+    const orbitRadiusY = this.scaleSize(BALL_ORBIT_RADIUS * 0.3, true); // Elliptical for 3D effect
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash(ORBIT_PATH_DASH);
+
+    ctx.beginPath();
+    ctx.ellipse(screenPos.x, screenPos.y, orbitRadiusX, orbitRadiusY, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // Draw the max drag radius circle when aiming
+  private drawMaxDragRadius(center: Vector): void {
+    const { ctx } = this;
+    const screenPos = this.toScreen(center);
+    const maxRadius = this.scaleSize(MAX_DRAG_RADIUS);
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(245, 158, 11, 0.25)'; // Faint orange
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+
+    ctx.beginPath();
+    ctx.arc(screenPos.x, screenPos.y, maxRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // "Short Pointer" - Draw a short solid arrow from ball indicating launch direction
+  private drawLaunchPointer(indicator: LaunchIndicator): void {
     const { ctx } = this;
     const startScreen = this.toScreen(indicator.startPos);
     const magnitude = indicator.magnitude / MAX_LAUNCH_MAGNITUDE;
 
-    // Direction line
-    const lineLength = 80 + magnitude * 60;
-    const endX = startScreen.x + indicator.direction.x * lineLength;
-    const endY = startScreen.y + indicator.direction.y * lineLength;
+    // Short arrow from ball in launch direction
+    const pointerLength = this.scaleSize(LAUNCH_POINTER_LENGTH) * (1 + magnitude * 0.5);
+    const endX = startScreen.x + indicator.direction.x * pointerLength;
+    const endY = startScreen.y + indicator.direction.y * pointerLength;
 
-    // Draw power gradient line
-    const gradient = ctx.createLinearGradient(startScreen.x, startScreen.y, endX, endY);
-    gradient.addColorStop(0, COLORS.launch.line);
-    gradient.addColorStop(1, COLORS.launch.lineFaint);
-
-    ctx.strokeStyle = gradient;
-    ctx.lineWidth = 4 + magnitude * 2;
+    // Draw power line (solid, not dashed)
+    ctx.strokeStyle = COLORS.launch.line;
+    ctx.lineWidth = 3 + magnitude * 2;
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(startScreen.x, startScreen.y);
@@ -449,35 +504,38 @@ export class Renderer {
     ctx.stroke();
 
     // Arrow head
-    const arrowSize = 10 + magnitude * 5;
+    const arrowSize = 8 + magnitude * 4;
     const angle = Math.atan2(indicator.direction.y, indicator.direction.x);
     ctx.fillStyle = COLORS.launch.line;
     ctx.beginPath();
     ctx.moveTo(endX, endY);
     ctx.lineTo(
-      endX - arrowSize * Math.cos(angle - Math.PI / 6),
-      endY - arrowSize * Math.sin(angle - Math.PI / 6)
+      endX - arrowSize * Math.cos(angle - Math.PI / 5),
+      endY - arrowSize * Math.sin(angle - Math.PI / 5)
     );
     ctx.lineTo(
-      endX - arrowSize * Math.cos(angle + Math.PI / 6),
-      endY - arrowSize * Math.sin(angle + Math.PI / 6)
+      endX - arrowSize * Math.cos(angle + Math.PI / 5),
+      endY - arrowSize * Math.sin(angle + Math.PI / 5)
     );
     ctx.closePath();
     ctx.fill();
 
-    // Power indicator dots
-    const dotCount = Math.floor(magnitude * 5) + 1;
-    for (let i = 0; i < dotCount; i++) {
-      const t = (i + 1) / 6;
-      const dotX = startScreen.x + (endX - startScreen.x) * t;
-      const dotY = startScreen.y + (endY - startScreen.y) * t;
-      const dotRadius = 3 + magnitude * 2;
-
-      ctx.fillStyle = i < dotCount - 1 ? COLORS.launch.power : COLORS.launch.line;
-      ctx.beginPath();
-      ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    // Power indicator: small glow around ball based on magnitude
+    const glowRadius = this.scaleSize(BALL_RADIUS) * (1.5 + magnitude);
+    const glowGradient = ctx.createRadialGradient(
+      startScreen.x,
+      startScreen.y,
+      0,
+      startScreen.x,
+      startScreen.y,
+      glowRadius
+    );
+    glowGradient.addColorStop(0, `rgba(245, 158, 11, ${0.2 + magnitude * 0.3})`);
+    glowGradient.addColorStop(1, 'rgba(245, 158, 11, 0)');
+    ctx.fillStyle = glowGradient;
+    ctx.beginPath();
+    ctx.arc(startScreen.x, startScreen.y, glowRadius, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // Draw editor-specific elements

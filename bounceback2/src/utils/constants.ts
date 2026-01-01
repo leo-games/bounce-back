@@ -14,6 +14,12 @@ export const BALL_ORBIT_SPEED = Math.PI;  // Radians per second
 export const BALL_TRAIL_LENGTH = 12;      // Number of trail positions
 export const BALL_TRAIL_SPACING = 0.016;  // Seconds between trail points
 
+// Liam Mechanic - Direct Aim
+export const MAX_DRAG_RADIUS = 0.15;      // Maximum distance ball can be dragged from player
+export const LAUNCH_POINTER_LENGTH = 0.04; // Length of the short arrow pointer from ball
+export const ORBIT_PATH_DASH = [6, 4];    // Dash pattern for orbit path [line, gap]
+export const GRAB_HIT_RADIUS = 0.03;      // Hit detection radius for grabbing ball/player
+
 // Player visuals
 export const PLAYER_WIDTH = 0.05;         // Normalized
 export const PLAYER_HEIGHT = 0.06;        // Normalized

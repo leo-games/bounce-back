@@ -5,6 +5,7 @@ import {
   BALL_ORBIT_RADIUS,
   BALL_ORBIT_SPEED,
   BALL_TRAIL_LENGTH,
+  MAX_DRAG_RADIUS,
 } from '@/utils/constants';
 
 export interface BallConfig {
@@ -19,6 +20,7 @@ export class Ball {
   orbitCenter: Vector;
   trail: Vector[];
   isLaunched: boolean;
+  isGrabbed: boolean;  // "The Grab" state - ball is grabbed and orbit is frozen
   // 3D orbit effect properties
   orbitDepth: number;  // -1 (behind) to 1 (in front)
   orbitScale: number;  // Scale factor for 3D effect
@@ -31,6 +33,7 @@ export class Ball {
     this.velocity = Vec.zero();
     this.trail = [];
     this.isLaunched = false;
+    this.isGrabbed = false;
     this.trailTimer = 0;
     this.orbitDepth = 0;
     this.orbitScale = 1;
@@ -73,6 +76,12 @@ export class Ball {
           this.trail.pop();
         }
       }
+    } else if (this.isGrabbed) {
+      // Ball is grabbed - position is controlled externally, just update 3D depth
+      // When grabbed, ball is always "in front" (depth = 1)
+      this.orbitDepth = 1;
+      this.orbitScale = 1.2;  // Slightly larger when grabbed
+      this.trail = [];
     } else {
       // Orbit around player
       this.orbitAngle += BALL_ORBIT_SPEED * deltaTime;
@@ -85,9 +94,53 @@ export class Ball {
     }
   }
 
+  // "The Grab" - stop orbit and freeze ball position
+  grab(): void {
+    if (this.isLaunched) return;
+    this.isGrabbed = true;
+    // Ball stays at its current position when grabbed
+  }
+
+  // Release without launching (cancel grab)
+  releaseGrab(): void {
+    this.isGrabbed = false;
+  }
+
+  // "Direct Aiming" - set ball position during drag, constrained to max radius
+  setDragPosition(targetPos: Vector): void {
+    if (!this.isGrabbed) return;
+
+    const toTarget = Vec.sub(targetPos, this.orbitCenter);
+    const distance = Vec.length(toTarget);
+
+    if (distance > MAX_DRAG_RADIUS) {
+      // Clamp to max radius
+      const clamped = Vec.scale(Vec.normalize(toTarget), MAX_DRAG_RADIUS);
+      this.position = Vec.add(this.orbitCenter, clamped);
+    } else {
+      this.position = Vec.clone(targetPos);
+    }
+  }
+
+  // Get launch direction and power based on ball position relative to player
+  getLaunchParams(): { direction: Vector; magnitude: number } {
+    const toball = Vec.sub(this.position, this.orbitCenter);
+    const distance = Vec.length(toball);
+
+    if (distance < 0.001) {
+      return { direction: { x: 0, y: -1 }, magnitude: 0 };
+    }
+
+    return {
+      direction: Vec.normalize(toball),
+      magnitude: distance / MAX_DRAG_RADIUS,  // 0 to 1
+    };
+  }
+
   launch(direction: Vector, speed: number): void {
     this.velocity = Vec.scale(direction, speed);
     this.isLaunched = true;
+    this.isGrabbed = false;
     this.trail = [];
   }
 
@@ -95,6 +148,7 @@ export class Ball {
     this.orbitCenter = Vec.clone(orbitCenter);
     this.velocity = Vec.zero();
     this.isLaunched = false;
+    this.isGrabbed = false;
     this.trail = [];
     this.position = this.getOrbitPosition();
   }
@@ -105,7 +159,7 @@ export class Ball {
 
   setOrbitCenter(center: Vector): void {
     this.orbitCenter = Vec.clone(center);
-    if (!this.isLaunched) {
+    if (!this.isLaunched && !this.isGrabbed) {
       this.position = this.getOrbitPosition();
     }
   }
