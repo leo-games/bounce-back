@@ -36,11 +36,11 @@ const BrickPropertiesEditor: React.FC<BrickPropertiesEditorProps> = ({
   };
 
   return (
-    <div className="space-y-3 border-t border-gray-200 pt-3 mt-3">
-      <h4 className="text-base font-medium text-center text-gray-700 md:text-sm">Brick Properties</h4>
+    <div className="space-y-3 border-t border-white/70 pt-3 mt-3">
+      <h4 className="text-base font-medium text-center text-slate-700 md:text-sm">Brick Properties</h4>
       <div className="space-y-2">
         <div>
-          <label htmlFor="propMoveRange" className="block mb-1 text-sm text-gray-600 md:text-xs">Move Range:</label>
+          <label htmlFor="propMoveRange" className="block mb-1 text-sm text-slate-600 md:text-xs">Move Range:</label>
           <input
             type="number"
             id="propMoveRange"
@@ -51,11 +51,11 @@ const BrickPropertiesEditor: React.FC<BrickPropertiesEditorProps> = ({
             onChange={handleInputChange}
             disabled={!isMover || editorState.isUpdatingPropertiesFromInput}
             placeholder={isMover ? '' : 'N/A (Static)'}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-base md:text-xs disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
+            className="w-full px-3 py-2 border border-slate-300 rounded-md text-base md:text-xs disabled:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
           />
         </div>
         <div>
-          <label htmlFor="propMoveSpeed" className="block mb-1 text-sm text-gray-600 md:text-xs">Move Speed:</label>
+          <label htmlFor="propMoveSpeed" className="block mb-1 text-sm text-slate-600 md:text-xs">Move Speed:</label>
           <input
             type="number"
             id="propMoveSpeed"
@@ -66,7 +66,7 @@ const BrickPropertiesEditor: React.FC<BrickPropertiesEditorProps> = ({
             onChange={handleInputChange}
             disabled={!isMover || editorState.isUpdatingPropertiesFromInput}
             placeholder={isMover ? '' : 'N/A (Static)'}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-base md:text-xs disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-70"
+            className="w-full px-3 py-2 border border-slate-300 rounded-md text-base md:text-xs disabled:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
           />
         </div>
       </div>

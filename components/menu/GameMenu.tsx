@@ -16,7 +16,7 @@ interface GameMenuProps {
   levels: LevelData[];
   setLevels: React.Dispatch<React.SetStateAction<LevelData[]>>;
   loadLevelData: (index: number) => void;
-  saveCurrentLevelData: () => void;
+  saveCurrentLevelData: () => LevelData | null;
   showUIMessage: (text: string, duration?: number) => void;
   fileInputRef: React.RefObject<HTMLInputElement>;
   onPointerOverUIChanged: (isOverUI: boolean) => void;
@@ -105,11 +105,18 @@ const GameMenu: React.FC<GameMenuProps> = ({
       return;
     }
     try {
+      let levelDataToExport: LevelData;
       if (gameState.mode === 'editor') {
-        saveCurrentLevelData(); // Ensure current state is saved to levels array first
+        const savedLevel = saveCurrentLevelData(); // Ensure current state is validated and saved first
+        if (!savedLevel) {
+          showUIMessage("Export blocked: level failed solvability validation.", 3000);
+          return;
+        }
+        levelDataToExport = deepClone(savedLevel);
+      } else {
+        levelDataToExport = deepClone(levels[index]);
       }
-      // Use the latest version from `levels` state after potential save
-      const levelDataToExport = deepClone(levels[index]); 
+
       if (!levelDataToExport || !levelDataToExport.bricks || !levelDataToExport.player || !levelDataToExport.hole || !levelDataToExport.savedCanvasWidth || !levelDataToExport.savedCanvasHeight) {
         throw new Error("Level data is incomplete for export.");
       }
@@ -197,52 +204,58 @@ const GameMenu: React.FC<GameMenuProps> = ({
 
   return (
     <div 
-        className={`absolute top-0 left-0 h-full bg-white p-4 shadow-xl z-20 space-y-3 w-64 max-h-full overflow-y-auto transition-transform duration-300 ease-in-out ${
+        className={`glass-panel absolute top-0 left-0 h-full p-4 z-20 space-y-3 w-72 max-h-full overflow-y-auto transition-transform duration-300 ease-in-out ${
             showMenuUI ? 'translate-x-0' : '-translate-x-full'
-        } md:relative md:top-4 md:left-4 md:h-auto md:max-h-[calc(100vh-2rem)] md:rounded-lg md:translate-x-0`}
+        } md:relative md:top-4 md:left-4 md:h-auto md:max-h-[calc(100vh-2rem)] md:rounded-2xl md:translate-x-0`}
         onMouseEnter={() => onPointerOverUIChanged(true)}
         onMouseLeave={() => onPointerOverUIChanged(false)}
     >
-      <div className="flex justify-center mb-2">
-        {/* Placeholder for logo */}
-        <div className="w-20 h-16 bg-gray-300 text-gray-600 flex items-center justify-center text-xs rounded">BounceBack Logo</div>
+      <div className="flex justify-center mb-1">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-400 to-cyan-500 text-white flex items-center justify-center text-lg font-bold shadow-lg">
+          BB
+        </div>
       </div>
-      <h2 className="text-xl font-semibold text-center text-gray-800">Bounce Back</h2>
+      <h2 className="text-2xl font-semibold text-center text-slate-800">Bounce Back</h2>
+      <p className="text-center text-xs text-slate-600 -mt-2">Build clever shots. Keep every curated level beatable.</p>
 
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => handleModeChange('play')}
-          className={`w-full px-4 py-2 rounded-md transition duration-150 ease-in-out text-sm font-medium
-                        ${gameState.mode === 'play' ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
+          className={`w-full px-4 py-2 rounded-lg transition duration-150 ease-in-out text-sm font-medium
+                        ${gameState.mode === 'play'
+                          ? 'bg-orange-500 hover:bg-orange-600 text-white shadow'
+                          : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
         >
-          Play Mode
+          Play Test
         </button>
         <button
           onClick={() => handleModeChange('editor')}
-          className={`w-full px-4 py-2 rounded-md transition duration-150 ease-in-out text-sm font-medium
-                        ${gameState.mode === 'editor' ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`}
+          className={`w-full px-4 py-2 rounded-lg transition duration-150 ease-in-out text-sm font-medium
+                        ${gameState.mode === 'editor'
+                          ? 'bg-cyan-600 hover:bg-cyan-700 text-white shadow'
+                          : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
         >
-          Level Editor
+          Edit Level
         </button>
       </div>
 
-      <div className="text-sm text-gray-600 text-center">
+      <div className="text-sm text-slate-700 text-center">
         Playing Level: <span className="font-medium">{levels[gameState.currentLevelIndex]?.name || gameState.currentLevelIndex + 1}</span>
       </div>
 
       {gameState.mode === 'editor' && (
-        <div className="space-y-3 border-t border-gray-200 pt-3 mt-3">
-          <h3 className="text-md font-semibold text-center text-gray-700">Level Editor</h3>
-          <div className="text-sm text-gray-600 text-center">
+        <div className="space-y-3 border-t border-white/70 pt-3 mt-3">
+          <h3 className="text-md font-semibold text-center text-slate-800">Level Editor</h3>
+          <div className="text-sm text-slate-700 text-center">
             Editing Level: <span className="font-medium">{levels[gameState.currentLevelIndex]?.name || gameState.currentLevelIndex + 1}</span>
           </div>
-          <div className="text-xs text-gray-500 text-center mb-2 p-1 bg-gray-50 rounded border border-gray-200">
-            Dbl-Click Name: Rename | Ctrl+Click: Multi-Select | Drag: Marquee | Arrow Keys: Nudge | Ctrl+C/V/Z/Y/Del
+          <div className="text-xs text-slate-600 text-center mb-2 p-2 bg-white/70 rounded-lg border border-white">
+            Double-click name to rename. Drag to select. Arrows to nudge. Save checks solvability.
           </div>
           
           <div className="flex space-x-1">
-            <button onClick={undo} className="flex-1 px-2 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-xs">Undo</button>
-            <button onClick={redo} className="flex-1 px-2 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-xs">Redo</button>
+            <button onClick={undo} className="flex-1 px-2 py-1 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 text-xs">Undo</button>
+            <button onClick={redo} className="flex-1 px-2 py-1 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 text-xs">Redo</button>
           </div>
 
           <LevelList
@@ -255,14 +268,14 @@ const GameMenu: React.FC<GameMenuProps> = ({
           />
           
           <div className="grid grid-cols-2 gap-1 mt-2">
-            <button onClick={handleAddNewLevel} className="w-full px-3 py-1 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 text-xs">Add New</button>
-            <button onClick={handleImportClick} className="w-full px-3 py-1 bg-cyan-500 text-white rounded-md hover:bg-cyan-600 text-xs">Import</button>
+            <button onClick={handleAddNewLevel} className="w-full px-3 py-1 bg-teal-600 text-white rounded-md hover:bg-teal-700 text-xs">Add New</button>
+            <button onClick={handleImportClick} className="w-full px-3 py-1 bg-sky-600 text-white rounded-md hover:bg-sky-700 text-xs">Import</button>
             <input type="file" ref={fileInputRef} accept=".json" multiple style={{ display: 'none' }} onChange={handleFileImport} />
-            <button onClick={handleDeleteSelectedLevel} className="w-full px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 text-xs">Delete Sel.</button>
-            <button onClick={handleExportSelectedLevel} className="w-full px-3 py-1 bg-purple-500 text-white rounded-md hover:bg-purple-600 text-xs">Export Sel.</button>
+            <button onClick={handleDeleteSelectedLevel} className="w-full px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-xs">Delete Sel.</button>
+            <button onClick={handleExportSelectedLevel} className="w-full px-3 py-1 bg-slate-700 text-white rounded-md hover:bg-slate-800 text-xs">Export Sel.</button>
           </div>
-          <button onClick={saveCurrentLevelData} className="w-full px-4 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 text-sm font-medium">
-            Save Current Level
+          <button onClick={saveCurrentLevelData} className="w-full px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 text-sm font-medium">
+            Save Curated Level
           </button>
 
           <BrickPropertiesEditor

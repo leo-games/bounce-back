@@ -36,7 +36,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   // Drawing functions
   const drawHole = useCallback((ctx: CanvasRenderingContext2D) => {
     const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'hole');
-    ctx.fillStyle = "#222";
+    ctx.fillStyle = "#203649";
     ctx.beginPath();
     ctx.arc(gameState.hole.x, gameState.hole.y, gameState.hole.radius, 0, Math.PI * 2);
     ctx.fill();
@@ -74,11 +74,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const drawPlayer = useCallback((ctx: CanvasRenderingContext2D) => {
     const isSelected = gameState.mode === 'editor' && editorState.selectedItems.some(item => item.type === 'player');
     const player = gameState.player;
-    ctx.fillStyle = "#4CAF50";
+    ctx.fillStyle = "#247c6b";
     ctx.fillRect(player.x, player.y, player.width, player.height);
     const headX = player.x + player.width / 2;
     const headY = player.y - player.headRadius;
-    ctx.fillStyle = "#8BC34A";
+    ctx.fillStyle = "#38a98f";
     ctx.beginPath();
     ctx.arc(headX, headY, player.headRadius, 0, Math.PI * 2);
     ctx.fill();
@@ -94,8 +94,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   const drawBall = useCallback((ctx: CanvasRenderingContext2D) => {
     ctx.save();
-    ctx.fillStyle = "white";
-    ctx.strokeStyle = "black";
+    ctx.fillStyle = "#fffef9";
+    ctx.strokeStyle = "#203649";
     ctx.lineWidth = gameState.scaledBallOutlineWidth;
     ctx.beginPath();
     ctx.arc(gameState.ball.x, gameState.ball.y, gameState.ball.radius, 0, Math.PI * 2);
@@ -120,7 +120,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const endY = gameState.ball.y + aimLineVec.y * displayLength;
     
     ctx.lineTo(endX, endY);
-    ctx.strokeStyle = "rgba(255, 0, 0, 0.7)";
+    ctx.strokeStyle = "rgba(239, 106, 51, 0.82)";
     ctx.lineWidth = Math.max(1, 2 * gameState.lastSizeScaleMin);
     ctx.setLineDash([5 * gameState.lastSizeScaleMin, 3 * gameState.lastSizeScaleMin]);
     ctx.stroke();
@@ -128,7 +128,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     
     ctx.beginPath();
     ctx.arc(endX, endY, Math.max(1, 3 * gameState.lastSizeScaleMin), 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+    ctx.fillStyle = "rgba(239, 106, 51, 0.88)";
     ctx.fill();
     ctx.restore();
   }, [gameState, editorState.aim]);
@@ -221,7 +221,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (!ctx) return;
     ctxRef.current = ctx;
 
-    ctx.fillStyle = Constants.CANVAS_BACKGROUND_COLOR;
+    const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bgGradient.addColorStop(0, Constants.CANVAS_BACKGROUND_COLOR);
+    bgGradient.addColorStop(1, "#eaf6ff");
+    ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     drawHole(ctx);
@@ -676,7 +679,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     } else { // Play mode
         if (editorState.aim.active && gameState.ball.onPlayer) {
-            if (Math.abs(editorState.aim.dx) > 0.01 || Math.abs(editorState.aim.dy) < -0.01) {
+            if (Math.abs(editorState.aim.dx) > 0.01 || Math.abs(editorState.aim.dy) > 0.01) {
                 setGameState(prev => ({ ...prev, ball: { ...prev.ball, fired: true, onPlayer: false, vx: editorState.aim.dx, vy: editorState.aim.dy } }));
             }
             setEditorState(prev => ({ ...prev, aim: { ...prev.aim, active: false } }));
@@ -748,10 +751,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     const ctrlPressed = e.ctrlKey || e.metaKey;
 
-    if (ctrlPressed && e.key.toLowerCase() === 'z') { e.preventDefault(); /* undo handled by prop */ }
-    else if (ctrlPressed && e.key.toLowerCase() === 'y') { e.preventDefault(); /* redo handled by prop */ }
-    else if (ctrlPressed && e.key.toLowerCase() === 'c') { e.preventDefault(); /* copy handled by prop */ }
-    else if (ctrlPressed && e.key.toLowerCase() === 'v') { e.preventDefault(); /* paste handled by prop */ }
+    if (ctrlPressed && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y' || e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v')) {
+        return;
+    }
     else if ((e.key === "Delete" || e.key === "Backspace") && editorState.selectedItems.length > 0) {
         e.preventDefault();
         const containsNonBrick = editorState.selectedItems.some(item => item.type !== 'brick');

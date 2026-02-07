@@ -5,6 +5,7 @@ import * as _constants from './constants'; // Import all constants
 import { Vec } from './utils/vector';
 import { getRectVertices, getRectAxes, projectShapeOntoAxis, projectCircleOntoAxis, checkCircleRectCollision, isPointInRotatedRect, getBrickHandles, getRectBoundingBox, doRectsOverlap } from './utils/geometry';
 import { deepClone, sanitizeFilename, statesAreEqual } from './utils/common';
+import { findSolvableShot, normalizeMovementType } from './utils/levelSolvability';
 import GameCanvas from './components/canvas/GameCanvas';
 import StartMenu from './components/menu/StartMenu';
 import GameMenu from './components/menu/GameMenu';
@@ -159,6 +160,7 @@ const App: React.FC = () => {
         hole: { x: holeX, y: holeY },
         bricks: Array.isArray(lvl.bricks) ? lvl.bricks.map((brick, brickIndex) => {
             const defaultBrick = defaultLvl.bricks[brickIndex] || defaultLvl.bricks[0] || {} as Brick; 
+            const movementType = normalizeMovementType(brick.movementType);
             const validatedBrick: Brick = {
                 x: brick.x ?? defaultBrick.x ?? (FALLBACK_CANVAS_WIDTH / 2 - 50),
                 y: brick.y ?? defaultBrick.y ?? (FALLBACK_CANVAS_HEIGHT / 2),
@@ -166,7 +168,7 @@ const App: React.FC = () => {
                 height: brick.height ?? defaultBrick.height ?? 20,
                 angle: brick.angle || 0,
                 isKillBrick: brick.isKillBrick || false,
-                movementType: brick.movementType || null,
+                movementType,
                 moveRange: brick.moveRange ?? BASE_DEFAULT_MOVE_RANGE,
                 moveSpeed: brick.moveSpeed ?? DEFAULT_MOVE_SPEED,
                 initialX: brick.initialX, 
@@ -258,15 +260,15 @@ const App: React.FC = () => {
             scaledAimLineLength: BASE_AIM_LINE_LENGTH * sizeScaleMin,
             scaledBallOutlineWidth: BASE_BALL_OUTLINE_WIDTH * sizeScaleMin,
             player: {
-                x: (levelData.player.x || positionReferenceWidth / 2) * positionScaleX,
-                y: (levelData.player.y || positionReferenceHeight - BASE_PLAYER_DEFAULT_BOTTOM_OFFSET) * positionScaleY,
+                x: (levelData.player.x ?? positionReferenceWidth / 2) * positionScaleX,
+                y: (levelData.player.y ?? positionReferenceHeight - BASE_PLAYER_DEFAULT_BOTTOM_OFFSET) * positionScaleY,
                 width: BASE_PLAYER_WIDTH * sizeScaleX,
                 height: BASE_PLAYER_HEIGHT * sizeScaleY,
                 headRadius: BASE_PLAYER_HEAD_RADIUS * sizeScaleMin,
             },
             hole: {
-                x: (levelData.hole.x || positionReferenceWidth / 2) * positionScaleX,
-                y: (levelData.hole.y || BASE_HOLE_DEFAULT_Y) * positionScaleY,
+                x: (levelData.hole.x ?? positionReferenceWidth / 2) * positionScaleX,
+                y: (levelData.hole.y ?? BASE_HOLE_DEFAULT_Y) * positionScaleY,
                 radius: BASE_HOLE_RADIUS * sizeScaleMin,
             },
             ball: {
@@ -343,6 +345,11 @@ const App: React.FC = () => {
       showUIMessage("Error saving levels. Storage might be full.", 3000);
     }
   }, [showUIMessage]);
+
+  useEffect(() => {
+    if (levels.length === 0) return;
+    saveLevelsToStorage(levels);
+  }, [levels, saveLevelsToStorage]);
 
 
   // --- History Management ---
@@ -658,11 +665,11 @@ const App: React.FC = () => {
   }
   
   return (
-    <div className="w-full h-full flex relative bg-gray-800 md:flex-row flex-col">
+    <div className="app-shell w-full h-full flex relative md:flex-row flex-col">
       {/* Overlay for mobile */}
       {isMobile && showMenuUI && (
         <div 
-          className="absolute inset-0 bg-black bg-opacity-50 z-10"
+          className="menu-backdrop absolute inset-0 z-10"
           onClick={toggleGameMenu}
         ></div>
       )}
@@ -686,7 +693,7 @@ const App: React.FC = () => {
         saveCurrentLevelData={() => {
             if (!canvasRef.current || !canvasContainerRef.current) {
                 showUIMessage("Canvas not ready for saving.", 2000);
-                return;
+                return null;
             }
             const currentCanvasWidth = canvasRef.current.width;
             const currentCanvasHeight = canvasRef.current.height;
@@ -694,7 +701,7 @@ const App: React.FC = () => {
 
             if (index < 0 || index >= levels.length) {
                 showUIMessage("Invalid level index for saving.", 2000);
-                return;
+                return null;
             }
 
             const updatedLevelData = deepClone(levels[index]);
@@ -742,12 +749,18 @@ const App: React.FC = () => {
               x: gameState.hole.x * toFallbackScaleX, 
               y: gameState.hole.y * toFallbackScaleY
           };
+
+            const solvability = findSolvableShot(updatedLevelData);
+            if (!solvability.solvable) {
+              showUIMessage("Level save blocked: no winning shot found. Adjust layout and try again.", 3200);
+              return null;
+            }
             
             const newLevels = [...levels];
             newLevels[index] = updatedLevelData;
             setLevels(newLevels);
-            saveLevelsToStorage(newLevels);
             showUIMessage(`Level ${index + 1} ('${updatedLevelData.name}') saved!`, 1500);
+            return updatedLevelData;
         }}
         showUIMessage={showUIMessage}
         fileInputRef={fileInputRef}
@@ -805,9 +818,17 @@ const App: React.FC = () => {
       />
       
       <div className="flex-grow h-full relative">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 top-hud px-3 py-1.5 pointer-events-none">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-700">
+              {gameState.mode === 'play' ? 'Play Mode' : 'Editor Mode'}
+            </span>
+            <span className="info-chip">Level: {levels[gameState.currentLevelIndex]?.name || gameState.currentLevelIndex + 1}</span>
+          </div>
+        </div>
         <button 
           onClick={toggleGameMenu} 
-          className={`absolute top-4 left-4 z-30 bg-gray-600 text-white p-2 rounded-md hover:bg-gray-700 transition-all duration-150 ease-in-out md:hidden`}
+          className={`floating-menu-toggle absolute top-4 left-4 z-30 p-2 rounded-xl transition-all duration-150 ease-in-out md:hidden`}
           title={showMenuUI ? "Hide Menu" : "Show Menu"}
         >
           {showMenuUI ? (

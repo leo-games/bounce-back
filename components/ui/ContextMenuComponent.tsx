@@ -173,7 +173,7 @@ const ContextMenuComponent: React.FC<ContextMenuComponentProps> = ({
     <button
       onClick={onClickAction}
       disabled={disabled}
-      className="block w-full text-left px-4 py-2 text-sm text-gray-700 rounded-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="block w-full text-left px-4 py-2 text-sm text-slate-700 rounded-sm hover:bg-orange-50 disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {text}
     </button>
@@ -217,7 +217,7 @@ const ContextMenuComponent: React.FC<ContextMenuComponentProps> = ({
     <div
       onMouseDown={(e) => e.stopPropagation()} // Prevent canvas mousedown when clicking on menu
       style={{ top: y, left: x }}
-      className="absolute bg-white border border-gray-200 rounded-md shadow-lg p-1 min-w-[180px] z-40"
+      className="absolute bg-white/95 border border-white rounded-md shadow-lg p-1 min-w-[180px] z-40 backdrop-blur-sm"
     >
       {menuItems}
     </div>

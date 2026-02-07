@@ -18,7 +18,7 @@ const MarqueeBox: React.FC<MarqueeBoxProps> = ({ marqueeState }) => {
 
   return (
     <div
-      className="absolute border border-dashed border-blue-500 bg-blue-500 bg-opacity-10 pointer-events-none z-10"
+      className="absolute border border-dashed border-orange-500 bg-orange-300 bg-opacity-20 pointer-events-none z-10"
       style={{
         left: x,
         top: y,

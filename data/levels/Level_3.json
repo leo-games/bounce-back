@@ -10,7 +10,7 @@
       "height": 30,
       "angle": 0,
       "isKillBrick": false,
-      "movementType": "Horizontal",
+      "movementType": "horizontal",
       "moveRange": 200,
       "moveSpeed": 1.5,
       "initialX": 540,

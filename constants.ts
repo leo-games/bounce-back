@@ -25,17 +25,17 @@ export const DEFAULT_MOVE_SPEED = 1.0;
 export const CLICK_THRESHOLD_SQ = 9; // Squared pixel distance to differentiate click from drag
 
 // Colors
-export const BRICK_COLOR = "#6B7280"; // gray-500
-export const BRICK_STROKE_COLOR = "#1F2937"; // gray-800
-export const KILL_BRICK_COLOR = "#EF4444"; // red-500
-export const VERTICAL_MOVER_COLOR = "#FACC15"; // yellow-400
-export const HORIZONTAL_MOVER_COLOR = "#4ADE80"; // green-400
-export const SELECTED_BRICK_COLOR = "#3B82F6"; // blue-500
-export const SELECTED_ITEM_OUTLINE_COLOR = "#F59E0B"; // amber-500
-export const HANDLE_COLOR = "#F59E0B"; // amber-500
-export const MOVER_RANGE_INDICATOR_COLOR = "rgba(100, 100, 255, 0.5)";
+export const BRICK_COLOR = "#4f7f8c";
+export const BRICK_STROKE_COLOR = "#17384a";
+export const KILL_BRICK_COLOR = "#d6473b";
+export const VERTICAL_MOVER_COLOR = "#f0a202";
+export const HORIZONTAL_MOVER_COLOR = "#2a9d8f";
+export const SELECTED_BRICK_COLOR = "#ef6a33";
+export const SELECTED_ITEM_OUTLINE_COLOR = "#ff7f11";
+export const HANDLE_COLOR = "#ff7f11";
+export const MOVER_RANGE_INDICATOR_COLOR = "rgba(50, 94, 135, 0.55)";
 export const MOVER_RANGE_INDICATOR_WIDTH = 2;
-export const CANVAS_BACKGROUND_COLOR = "#f0f8ff"; // Alice Blue
+export const CANVAS_BACKGROUND_COLOR = "#fffaf0";
 
 // Default Files & Fallback Size
 export const DEFAULT_LEVEL_FILES = [

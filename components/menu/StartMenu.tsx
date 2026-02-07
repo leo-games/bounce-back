@@ -7,15 +7,22 @@ interface StartMenuProps {
 
 const StartMenu: React.FC<StartMenuProps> = ({ onStart }) => {
   return (
-    <div className="absolute top-0 left-0 w-full h-full bg-blue-200 bg-opacity-95 flex flex-col justify-center items-center z-50 text-center p-5">
-      <h1 className="text-5xl font-bold text-blue-800 mb-4 text-shadow-lg">Bounce Back</h1>
-      <p className="text-blue-700 mb-8 text-lg">React & TypeScript Edition</p>
-      <button
-        onClick={onStart}
-        className="px-8 py-3 text-xl font-medium text-white bg-blue-600 rounded-lg shadow-md hover:bg-blue-700 transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-      >
-        Play Game
-      </button>
+    <div className="hero-screen z-50">
+      <div className="hero-card">
+        <div className="hero-badge">Physics Puzzle</div>
+        <h1 className="hero-title">Bounce Back</h1>
+        <p className="hero-subtitle">
+          Curve one perfect shot into the hole, then craft your own playable challenges.
+        </p>
+        <button onClick={onStart} className="hero-cta">
+          Start Playing
+        </button>
+        <div className="hero-tips">
+          <span className="hero-tip">Drag from the ball to aim</span>
+          <span className="hero-tip">Red bricks reset your attempt</span>
+          <span className="hero-tip">Edit mode includes solvability checks</span>
+        </div>
+      </div>
     </div>
   );
 };

@@ -19,7 +19,7 @@
       "height": 400,
       "angle": 0,
       "isKillBrick": false,
-      "movementType": "Vertical",
+      "movementType": "vertical",
       "moveRange": 150,
       "moveSpeed": 1.2,
       "initialX": 800,

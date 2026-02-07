@@ -24,5 +24,6 @@ This repository contains everything you need to run the app locally.
 
 Switch to **Level Editor** mode from the menu to create, import or export levels.
 Drag bricks, set them to move horizontally or vertically and mark kill bricks in
-red. Saved levels are stored in your browser and can be exported as JSON files
-to share with the community.
+red. Saving/exporting now validates that a level has at least one playable
+winning shot. Saved levels are stored in your browser and can be exported as
+JSON files to share with the community.
